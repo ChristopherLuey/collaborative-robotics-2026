@@ -17,6 +17,17 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Detect Ubuntu version and set ROS2 distro
+ROS_DISTRO="humble"  # default
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    if [ "$VERSION_ID" == "24.04" ]; then
+        ROS_DISTRO="jazzy"
+    elif [ "$VERSION_ID" == "22.04" ]; then
+        ROS_DISTRO="humble"
+    fi
+fi
+
 echo -e "${BLUE}"
 echo "============================================================================="
 echo "  TidyBot2 Setup Script - Collaborative Robotics 2026"
@@ -58,12 +69,20 @@ ask_yes_no() {
 check_ubuntu() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
-        if [ "$ID" != "ubuntu" ] || [ "$VERSION_ID" != "22.04" ]; then
-            print_warning "This script is designed for Ubuntu 22.04"
+        if [ "$ID" != "ubuntu" ]; then
+            print_warning "This script is designed for Ubuntu"
             print_warning "Detected: $PRETTY_NAME"
             if ! ask_yes_no "Continue anyway?"; then
                 exit 1
             fi
+        elif [ "$VERSION_ID" != "22.04" ] && [ "$VERSION_ID" != "24.04" ]; then
+            print_warning "This script is designed for Ubuntu 22.04 or 24.04"
+            print_warning "Detected: $PRETTY_NAME"
+            if ! ask_yes_no "Continue anyway?"; then
+                exit 1
+            fi
+        else
+            print_status "Detected Ubuntu $VERSION_ID - will use ROS2 $ROS_DISTRO"
         fi
     fi
 }
@@ -97,7 +116,7 @@ install_system_deps() {
 # =============================================================================
 
 check_ros2_installed() {
-    if [ -f /opt/ros/humble/setup.bash ]; then
+    if [ -f /opt/ros/$ROS_DISTRO/setup.bash ]; then
         return 0
     else
         return 1
@@ -105,7 +124,7 @@ check_ros2_installed() {
 }
 
 install_ros2() {
-    print_status "Installing ROS2 Humble..."
+    print_status "Installing ROS2 $ROS_DISTRO..."
 
     # Add ROS2 repository
     sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
@@ -116,23 +135,23 @@ install_ros2() {
         sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
 
     sudo apt update
-    sudo apt install -y ros-humble-desktop
+    sudo apt install -y ros-$ROS_DISTRO-desktop
 
     # Update again before installing additional packages
     sudo apt update
 
     # Install additional ROS2 packages
     sudo apt install -y \
-        ros-humble-xacro \
-        ros-humble-robot-state-publisher \
-        ros-humble-joint-state-publisher \
-        ros-humble-joint-state-publisher-gui \
-        ros-humble-rviz2 \
-        ros-humble-rosidl-typesupport-c \
-        ros-humble-rosidl-typesupport-cpp \
+        ros-$ROS_DISTRO-xacro \
+        ros-$ROS_DISTRO-robot-state-publisher \
+        ros-$ROS_DISTRO-joint-state-publisher \
+        ros-$ROS_DISTRO-joint-state-publisher-gui \
+        ros-$ROS_DISTRO-rviz2 \
+        ros-$ROS_DISTRO-rosidl-typesupport-c \
+        ros-$ROS_DISTRO-rosidl-typesupport-cpp \
         python3-colcon-common-extensions
 
-    print_status "ROS2 Humble installed successfully!"
+    print_status "ROS2 $ROS_DISTRO installed successfully!"
 }
 
 # =============================================================================
@@ -188,7 +207,7 @@ build_ros2_workspace() {
     fi
 
     # Source ROS2
-    source /opt/ros/humble/setup.bash
+    source /opt/ros/$ROS_DISTRO/setup.bash
 
     # Build
     colcon build
@@ -251,7 +270,7 @@ show_main_menu() {
             check_ubuntu
             install_system_deps
             if check_ros2_installed; then
-                print_status "ROS2 Humble already installed"
+                print_status "ROS2 $ROS_DISTRO already installed"
                 if ask_yes_no "Reinstall ROS2?"; then
                     install_ros2
                 fi
@@ -280,7 +299,7 @@ show_main_menu() {
             ;;
         3)
             if ! check_ros2_installed; then
-                print_error "ROS2 Humble not found. Please run full installation first."
+                print_error "ROS2 $ROS_DISTRO not found. Please run full installation first."
                 exit 1
             fi
             build_ros2_workspace
