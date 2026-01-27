@@ -210,6 +210,9 @@ build_ros2_workspace() {
     # Source ROS2
     source /opt/ros/$ROS_DISTRO/setup.bash
 
+    # Ensure dynamixel-sdk is installed (required for interbotix packages)
+    sudo apt install -y ros-$ROS_DISTRO-dynamixel-sdk
+
     # Build
     colcon build
 
