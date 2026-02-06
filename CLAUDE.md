@@ -121,6 +121,29 @@ source setup_env.bash
 ros2 launch tidybot_bringup real.launch.py
 ```
 
+### Object Pickup (Real Hardware)
+
+Pick up an object at a specified (x, y, z, yaw) pose using the right arm and IK planner:
+
+**Terminal 1 - Launch real hardware with planner:**
+```bash
+cd ros2_ws
+source setup_env.bash
+ros2 launch tidybot_bringup real.launch.py use_planner:=true
+```
+
+**Terminal 2 - Run pickup script:**
+```bash
+cd ros2_ws
+source setup_env.bash
+ros2 run tidybot_bringup pickup_object_real.py -- <x> <y> <z> <yaw>
+
+# Example:
+ros2 run tidybot_bringup pickup_object_real.py -- 0.1 -0.4 0.15 0.0
+```
+
+**Pickup sequence:** open gripper -> hover 5cm above target -> descend to target -> close gripper -> lift 10cm -> return to sleep pose.
+
 ### Option 4: Remote Control (Network)
 
 Control TidyBot2 from your own machine over the network using native ROS2.

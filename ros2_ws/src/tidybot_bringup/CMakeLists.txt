@@ -37,6 +37,7 @@ install(PROGRAMS
   scripts/diagnose_dynamixel.py
   scripts/example_state_machine.py
   scripts/trajectory_tracking.py
+  scripts/pickup_object_real.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
