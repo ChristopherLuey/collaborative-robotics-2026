@@ -9,7 +9,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from sensor_msgs_py import point_cloud2
 from cv_bridge import CvBridge
-
+import time
 import cv2
 
 
@@ -25,6 +25,7 @@ class YellowPointCloude(Node):
         self.cy = None
 
         self.rgb = None
+        self.depth = None
 
         self.sub_info = self.create_subscription(CameraInfo, '/camera/color/camera_info', self.info_cb, 10)
         self.sub_rgb  = self.create_subscription(Image, '/camera/color/image_raw', self.rgb_cb, 10)
@@ -70,22 +71,45 @@ class YellowPointCloude(Node):
         mask = cv2.inRange(hsv, lower, upper)
 
         mask = cv2.medianBlur(mask, 5)
+        cv2.imwrite("bannana.jpg", mask)
+        ts = time.time()
+        # stop_for = 1
+        # self.get_logger().info(f"Processing and publishing point cloud for {stop_for} seconds...")
+        # while time.time() - ts < stop_for:
+        #     rclpy.spin_once(self, timeout_sec=0.05)
 
+        # self.get_logger().info(f"we did it")
         ys, xs = np.where(mask > 0)
+        ys = ys.reshape(-1)
+        self.get_logger().info(f"uv: ({xs.shape}, {ys.shape})")
         if xs.size == 0:
             return
         
         z_axis = depth[ys, xs]
-        valid_z_axis = np.isfinte(z_axis) & (z_axis > 0.1) & (z_axis < 5.0)
-        
+        self.get_logger().info(f"depth: ({z_axis[0:20]})")
+        valid_z_axis = (z_axis > 100) & (z_axis < 5000)
+        # valid_z_axis = np.ones_like(xs)
+        self.get_logger().info(f"found {len(mask[mask > 0])} points")
+        self.get_logger().info(f"found {np.sum(valid_z_axis)} valid points")
+        # if (valid_z_axis) == 0:
+        #     self.get_logger().info("No valid depth points found.")
+        #     return
+
+        self.get_logger().info(f"cx: {self.cx}, cy: {self.cy}, fx: {self.fx}, fy: {self.fy}")
+        self.get_logger().info(f"before: ({xs.shape}, {ys.shape}, {z_axis.shape})")
         xs, ys, z_axis = xs[valid_z_axis], ys[valid_z_axis], z_axis[valid_z_axis]
         # Back-project to camera frame
-        X = (xs.astype(np.float32) - self.cx) * valid_z_axis / self.fx
-        Y = (ys.astype(np.float32) - self.cy) * valid_z_axis / self.fy
+        self.get_logger().info(f"after: ({xs.shape}, {ys.shape}, {z_axis.shape})")
+        try:
+            X = (xs.astype(np.float32) - self.cx * np.ones_like(xs)) * z_axis / self.fx
+            Y = (ys.astype(np.float32) - self.cy * np.ones_like(ys)) * z_axis / self.fy
+            points = np.stack([X, Y, z_axis], axis=1)
+        except Exception as e:
+            self.get_logger().error(f"Error in back-projection: {e}")
+            return
 
-        points = np.stack([X, Y, valid_z_axis], axis=1)
-
-        self.get_logger.info(f"the number of 3 pointsa are {X.shape}")
+        
+        self.get_logger().info(f"the number of 3 points are {X.shape}")
 
         header = self.rgb.header  # use color stamp/frame; ensure depth is aligned to color!
         cloud = point_cloud2.create_cloud_xyz32(header, points.tolist())

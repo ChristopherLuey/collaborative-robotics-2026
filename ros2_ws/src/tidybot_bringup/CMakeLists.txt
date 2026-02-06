@@ -38,6 +38,7 @@ install(PROGRAMS
   scripts/example_state_machine.py
   scripts/trajectory_tracking.py
   scripts/pickup_object_real.py
+  scripts/camera_to_robot_coordinate.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
