@@ -302,61 +302,82 @@ class MotionPlannerRealNode(Node):
         if ee_frame_id is None:
             return False, seed, float('inf'), float('inf')
 
-        # Get joint q indices for this arm
-        arm_idx_q = []
+        # Get joint indices for this arm
+        arm_idx_q = []  # configuration indices (for updating q)
+        arm_idx_v = []  # velocity indices (for Jacobian column extraction)
         for jname in self.arm_joints[arm_name]:
             if jname in self.joint_ids:
                 jid = self.joint_ids[jname]
                 arm_idx_q.append(self.model.joints[jid].idx_q)
+                arm_idx_v.append(self.model.joints[jid].idx_v)
 
-        # Target position
+        # Target position and rotation
         target_position = target_pose.translation
+        target_rotation = target_pose.rotation
 
         # Joint limits
         limits = list(self.JOINT_LIMITS.values())
 
-        # IK iteration using numerical Jacobian (position-only for now)
-        # Note: Orientation control can be added later with 6D Jacobian
         for iteration in range(self.ik_max_iterations):
             # Forward kinematics
             pin.forwardKinematics(self.model, self.data, q)
             pin.updateFramePlacements(self.model, self.data)
 
-            # Current position
-            current_position = self.data.oMf[ee_frame_id].translation
+            current_pose = self.data.oMf[ee_frame_id]
 
-            # Position error
-            pos_error_vec = target_position - current_position
+            # Position error (world frame)
+            pos_error_vec = target_position - current_pose.translation
             pos_error = np.linalg.norm(pos_error_vec)
 
-            # Check convergence (position only for now)
-            if pos_error < self.position_tolerance:
-                break
+            if use_orientation:
+                # Orientation error (body frame via log3)
+                R_err = current_pose.rotation.T @ target_rotation
+                ori_error_vec = pin.log3(R_err)
+                ori_error = np.linalg.norm(ori_error_vec)
 
-            # Compute numerical Jacobian (3x6 for position)
-            J = self.numerical_jacobian(q, arm_name, ee_frame_id)
+                # Check convergence (both position and orientation)
+                if pos_error < self.position_tolerance and ori_error < self.orientation_tolerance:
+                    break
 
-            # Damped least squares
-            JJT = J @ J.T + self.ik_damping * np.eye(3)
+                # Transform position error to body frame to match LOCAL Jacobian
+                pos_error_body = current_pose.rotation.T @ pos_error_vec
 
-            try:
-                v = J.T @ np.linalg.solve(JJT, pos_error_vec)
-            except np.linalg.LinAlgError:
-                break
+                # 6D error in body (LOCAL) frame
+                error_6d = np.concatenate([pos_error_body, ori_error_vec])
+
+                # Pinocchio analytical Jacobian in LOCAL frame (6 x nv)
+                J_full = pin.computeFrameJacobian(
+                    self.model, self.data, q, ee_frame_id, pin.LOCAL
+                )
+                J6 = J_full[:, arm_idx_v]
+
+                # Damped least squares
+                JJT = J6 @ J6.T + self.ik_damping * np.eye(6)
+
+                try:
+                    v = J6.T @ np.linalg.solve(JJT, error_6d)
+                except np.linalg.LinAlgError:
+                    break
+            else:
+                # Position-only convergence
+                if pos_error < self.position_tolerance:
+                    break
+
+                # 3x6 position Jacobian
+                J = self.numerical_jacobian(q, arm_name, ee_frame_id)
+
+                # Damped least squares
+                JJT = J @ J.T + self.ik_damping * np.eye(3)
+
+                try:
+                    v = J.T @ np.linalg.solve(JJT, pos_error_vec)
+                except np.linalg.LinAlgError:
+                    break
 
             # Update arm joints with joint limit clamping
             for i, idx_q in enumerate(arm_idx_q):
                 new_val = q[idx_q] + self.ik_dt * v[i]
                 q[idx_q] = np.clip(new_val, limits[i][0], limits[i][1])
-
-        # Compute final orientation error if requested
-        ori_error = 0.0
-        if use_orientation:
-            current_pose = self.data.oMf[ee_frame_id]
-            R_diff = target_pose.rotation.T @ current_pose.rotation
-            trace = np.trace(R_diff)
-            cos_angle = np.clip((trace - 1) / 2, -1, 1)
-            ori_error = np.arccos(cos_angle)
 
         # Extract final solution
         solution = self.get_arm_from_configuration(q, arm_name)
