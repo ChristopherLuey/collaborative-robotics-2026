@@ -37,6 +37,7 @@ import sensor_msgs_py.point_cloud2 as pc2
 from geometry_msgs.msg import TransformStamped, Pose
 from tf2_ros import TransformListener, Buffer
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 class GripperPoseNode(Node):
     """Arm control demo - move from home to forward position."""
@@ -106,8 +107,8 @@ class GripperPoseNode(Node):
         y = axis / np.linalg.norm(axis)
         z = np.cross(x, y)
         z = z / np.linalg.norm(z)
-        R = np.column_stack([x, y, z])
-        r = R.from_matrix(R)
+        rot_mat = np.column_stack([x, y, z])
+        r = R.from_matrix(rot_mat)
 
         quat = r.as_quat()
         
