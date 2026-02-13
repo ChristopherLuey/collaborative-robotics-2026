@@ -175,6 +175,22 @@ class TestPlannerReal(Node):
         positions = np.array([self.current_joint_positions.get(jname, 0.0) for jname in joint_names])
         return positions
 
+    def open_gripper(self, side: str = 'right', duration: float = 1.5):
+        """Open gripper by publishing command for a duration."""
+        msg = Float64MultiArray()
+        msg.data = [0.0]  # 0.0 = open
+        pub = self.right_gripper_pub
+        self.get_logger().info(f'{side.capitalize()} gripper -> OPEN')
+        start = time.time()
+        while (time.time() - start) < duration:
+            pub.publish(msg)
+            rclpy.spin_once(self, timeout_sec=0.05)
+            time.sleep(0.1)
+        # Send stop command
+        stop_msg = Float64MultiArray()
+        stop_msg.data = [0.5]
+        pub.publish(stop_msg)
+
     def close_gripper(self, side: str = 'right', duration: float = 1.5):
         """Close gripper by publishing command for a duration."""
         msg = Float64MultiArray()
@@ -234,6 +250,12 @@ class TestPlannerReal(Node):
 
     def run_tests(self):
         """Run the test sequence."""
+        # Open gripper at the start
+        self.get_logger().info('-' * 40)
+        self.get_logger().info('Opening gripper...')
+        self.open_gripper('right')
+        time.sleep(0.5)
+
         # Test 1: Plan only (no execution) - safe test
         self.get_logger().info('-' * 40)
         self.get_logger().info('Test 1: Right arm - PLAN ONLY (no execution)')
