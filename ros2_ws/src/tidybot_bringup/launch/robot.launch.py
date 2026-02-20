@@ -101,7 +101,7 @@ def launch_setup(context, *args, **kwargs):
 
     # URDF from xacro
     urdf_path = PathJoinSubstitution([pkg_description, 'urdf', 'tidybot_wx250s.urdf.xacro'])
-    robot_description = Command(['xacro ', urdf_path])
+    robot_description = Command(['xacro ', urdf_path, ' include_camera_optical_frames:=false'])
 
     # Robot state publisher (always needed)
     nodes.append(Node(
@@ -121,7 +121,7 @@ def launch_setup(context, *args, **kwargs):
         if use_left_arm:
             source_list.append('/left_arm/joint_states')
         if use_pan_tilt:
-            source_list.append('/pan_tilt/joint_states')
+            source_list.append('/camera/pan_tilt_state')
 
         nodes.append(Node(
             package='joint_state_publisher',
@@ -236,7 +236,7 @@ def launch_setup(context, *args, **kwargs):
                 'enable_depth': True,
                 'enable_infra1': False,
                 'enable_infra2': False,
-                'publish_tf': False,
+                'publish_tf': True,
                 'rgb_camera.color_profile': '640x480x15',
                 'depth_module.depth_profile': '640x480x15',
             }],

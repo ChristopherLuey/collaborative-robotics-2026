@@ -60,3 +60,6 @@ build/
 install/
 
 log/
+
+# Audio recordings from microphone tests
+**/recordings/
