@@ -63,6 +63,7 @@ def launch_setup(context, *args, **kwargs):
     use_compression = LaunchConfiguration('use_compression').perform(context) == 'true'
     use_rviz = LaunchConfiguration('use_rviz').perform(context) == 'true'
     use_planner = LaunchConfiguration('use_planner').perform(context) == 'true'
+    use_microphone = LaunchConfiguration('use_microphone').perform(context) == 'true'
     use_sim_topics = LaunchConfiguration('use_sim_topics').perform(context) == 'true'
     load_configs = LaunchConfiguration('load_configs').perform(context) == 'true'
 
@@ -92,7 +93,7 @@ def launch_setup(context, *args, **kwargs):
 
     # URDF from xacro
     urdf_path = PathJoinSubstitution([pkg_description, 'urdf', 'tidybot_wx250s.urdf.xacro'])
-    robot_description = Command(['xacro ', urdf_path])
+    robot_description = Command(['xacro ', urdf_path, ' include_camera_optical_frames:=false'])
 
     # Robot state publisher (always needed)
     nodes.append(Node(
@@ -113,7 +114,7 @@ def launch_setup(context, *args, **kwargs):
         if use_left_arm:
             source_list.append('/left_arm/joint_states')
         if use_pan_tilt:
-            source_list.append('/pan_tilt/joint_states')
+            source_list.append('/camera/pan_tilt_state')
 
         nodes.append(Node(
             package='joint_state_publisher',
@@ -224,12 +225,13 @@ def launch_setup(context, *args, **kwargs):
             parameters=[{
                 'camera_name': 'camera',
                 'camera_namespace': '',
+                'serial_no': '_023422071689',
                 'base_frame_id': 'link',
                 'enable_color': True,
                 'enable_depth': True,
                 'enable_infra1': False,
                 'enable_infra2': False,
-                'publish_tf': False,
+                'publish_tf': True,
                 'rgb_camera.color_profile': '640x480x15',
                 'depth_module.depth_profile': '640x480x15',
                 'align_depth.enable': True
@@ -287,6 +289,20 @@ def launch_setup(context, *args, **kwargs):
             }]
         ))
 
+    # Microphone recording node
+    if use_microphone:
+        nodes.append(Node(
+            package='tidybot_control',
+            executable='microphone_node',
+            name='microphone',
+            output='screen',
+            parameters=[{
+                'sample_rate': 16000,
+                'channels': 1,
+                'device_index': -1,
+            }]
+        ))
+
     return nodes
 
 
@@ -320,6 +336,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_compression', default_value='false',
             description='Launch image compression for remote clients'
+        ),
+        DeclareLaunchArgument(
+            'use_microphone', default_value='true',
+            description='Launch microphone recording node'
         ),
         DeclareLaunchArgument(
             'use_planner', default_value='false',
