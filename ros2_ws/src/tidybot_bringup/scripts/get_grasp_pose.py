@@ -18,7 +18,7 @@ Subscriptions:
 - /object_points (PointCloud2): Input object point cloud
 
 Publications:
-- /gripper_pose_cmd (Pose): Target gripper pose
+- /gripper_pose_cmd (PoseStamped): Target gripper pose
 
 Usage:
     # Terminal 1: Start simulation
@@ -34,7 +34,7 @@ import time
 from sklearn.decomposition import PCA
 from sensor_msgs.msg import PointCloud2
 import sensor_msgs_py.point_cloud2 as pc2
-from geometry_msgs.msg import TransformStamped, Pose
+from geometry_msgs.msg import TransformStamped, PoseStamped
 from tf2_ros import TransformListener, Buffer
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -46,13 +46,13 @@ class GripperPoseNode(Node):
         super().__init__('gripper_pose_node')
 
         # Publish the goal pose of the gripper (position + orientation) for the arm to follow
-        self.pose_pub = self.create_publisher(Pose, '/gripper_pose_cmd', 10)
+        self.pose_pub = self.create_publisher(PoseStamped, '/gripper_pose_cmd', 10)
         
 
         # Subscriber for joint states
         self.local_pc = None
         self.local_pc_sub = self.create_subscription(
-            PointCloud2, '/object_points', self.local_points_callback, 10
+            PointCloud2, '/banana_points', self.local_points_callback, 10
         )
 
         # Transformation
@@ -64,15 +64,31 @@ class GripperPoseNode(Node):
         # Names of the transforms you want to listen to
         self.camera_frame = 'pan_link'
         self.base_frame = 'odom'
-        
+
     def local_points_callback(self, msg):
         """Callback for local points topic."""
-        self.local_pc = list(pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True))
-        self.get_logger().info(f'Received local points: {self.local_pc}')
-    
+        points = pc2.read_points(
+            msg,
+            field_names=("x", "y", "z"),
+            skip_nans=True
+        )
+
+        # Convert structured output to regular Nx3 float32 array
+        self.local_pc = np.array(
+            [[p[0], p[1], p[2]] for p in points],
+            dtype=np.float32
+        )
+
+        # Extract the frame of the point cloud
+        self.camera_frame = msg.header.frame_id
+
+        self.get_logger().info(
+            f"Received {self.local_pc.shape[0]} points in frame '{self.camera_frame}'"
+        )
+
     def get_centroid(self, points):
         """Calculate the centroid of a list of points."""
-        if not points:
+        if points is None or len(points) == 0:
             return None
         x = sum(p[0] for p in points) / len(points)
         y = sum(p[1] for p in points) / len(points)
@@ -81,9 +97,9 @@ class GripperPoseNode(Node):
     
     def get_axis(self, points):
         """Calculate major and minor axes of the point cloud using PCA."""
-        if not points:
+        if points is None or len(points) == 0:
             return None, None
-        points_np = np.array(points)
+        points_np = np.array(points, dtype=np.float32)
         pca = PCA(n_components=3)
         pca.fit(points_np)
         
@@ -93,40 +109,64 @@ class GripperPoseNode(Node):
         
         return (major_axis, minor_axis)
 
-    def calculate_gripper_pose(self, centroid:np.ndarray, axis:np.ndarray):
-        """Calculate the desired gripper pose based on the centroid and minor axis."""
-        pose = Pose()
-        pose.position.x = centroid[0]
-        pose.position.y = centroid[1]
-        pose.position.z = centroid[2]
+    def calculate_gripper_pose(self, centroid: np.ndarray, axis: np.ndarray):
+        pose = PoseStamped()
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.header.frame_id = self.base_frame
 
-        # x align with -z world
-        # y align with minor axis
-        # z orthogonal to both
-        x = np.array([0, 0, -1])
-        y = axis / np.linalg.norm(axis)
-        z = np.cross(x, y)
-        z = z / np.linalg.norm(z)
-        rot_mat = np.column_stack([x, y, z])
+        # Position
+        pose.pose.position.x = float(centroid[0])
+        pose.pose.position.y = float(centroid[1])
+        pose.pose.position.z = float(centroid[2])
+
+        # Orientation
+        z = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        y = axis - np.dot(axis, z)*z
+        y /= np.linalg.norm(y)
+        x = np.cross(y, z)
+        x /= np.linalg.norm(x)
+
+        rot_mat = np.column_stack((x, y, z))
         r = R.from_matrix(rot_mat)
-
         quat = r.as_quat()
-        
-        pose.orientation.x = quat[0]
-        pose.orientation.y = quat[1]
-        pose.orientation.z = quat[2]
-        pose.orientation.w = quat[3]
+
+        pose.pose.orientation.x = float(quat[0])
+        pose.pose.orientation.y = float(quat[1])
+        pose.pose.orientation.z = float(quat[2])
+        pose.pose.orientation.w = float(quat[3])
 
         return pose
 
     def publish_pose(self):
-        if self.local_pc == None:
+        if self.local_pc is None or len(self.local_pc) == 0:
             return
-        centroid = self.get_centroid(self.local_pc)
-        major_axis, minor_axis = self.get_axis(self.local_pc)
-        
-        pose_msg = self.calculate_gripper_pose(centroid, minor_axis)
 
+        # Transform the entire point cloud from camera frame to base frame
+        try:
+            tf_msg = self.tf_buffer.lookup_transform(
+                self.base_frame,
+                self.camera_frame,
+                rclpy.time.Time()
+            )
+            points_base = transform_pointcloud(self.local_pc, tf_msg)
+        except Exception as e:
+            self.get_logger().warn(f"TF lookup failed: {e}")
+            return
+
+        # Compute centroid and PCA in base frame
+        centroid = self.get_centroid(points_base)
+        if centroid is None:
+            return
+
+        major_axis, minor_axis = self.get_axis(points_base)
+        if major_axis is None:
+            return
+
+        # Compute PoseStamped in base frame
+        pose_msg = self.calculate_gripper_pose(np.array(centroid, dtype=np.float32),
+                                            np.array(major_axis, dtype=np.float32))
+
+        # Publish
         self.pose_pub.publish(pose_msg)
 
 def main(args=None):

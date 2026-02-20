@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """"
 ROS2 node to subscribe to the RGB-D camera and 
 """
@@ -29,9 +30,9 @@ class PointCloudMask(Node):
 
         # TODO: test if the aligned_depth_to_color topic is published on our realsense!
         #       if so, we don't have to do physical alignment
-        self.sub_info = self.create_subscription(CameraInfo, '/camera/color/camera_info', self.info_cb, 10)
+        self.sub_info = self.create_subscription(CameraInfo, '/camera/realsense/aligned_depth_to_color/camera_info', self.info_cb, 10)
         self.sub_rgb  = Subscriber(self, Image, '/camera/color/image_raw')
-        self.sub_depth = Subscriber(self, Image, '/camera/aligned_depth_to_color/image_raw')
+        self.sub_depth = Subscriber(self, Image, '/camera/realsense/aligned_depth_to_color/image_raw')
         
         self.pub_cloud = self.create_publisher(PointCloud2, '/banana_points', 10)
 
@@ -119,7 +120,7 @@ class PointCloudMask(Node):
         self.get_logger().info(f"Z: {np.mean(points[:, 2])} +/- {np.std(points[:, 2])}")    
 
         header = rgb_msg.header  # use color stamp/frame; ensure depth is aligned to color!
-        self.get_logger().info("local pointcloud is in frame:", header.frame_id)
+        self.get_logger().info("local pointcloud is in frame: " + str(header.frame_id))
         cloud = point_cloud2.create_cloud_xyz32(header, points)
         self.pub_cloud.publish(cloud)
 
