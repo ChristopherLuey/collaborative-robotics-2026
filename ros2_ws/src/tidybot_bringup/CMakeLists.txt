@@ -39,6 +39,7 @@ install(PROGRAMS
   scripts/trajectory_tracking.py
   scripts/pickup_object_real.py
   scripts/camera_to_robot_coordinate.py
+  scripts/pointcloud_from_rgbd_to_occupancy.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
