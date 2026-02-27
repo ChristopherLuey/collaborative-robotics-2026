@@ -134,6 +134,68 @@ ros2 run tidybot_bringup test_base_real.py
 ros2 run tidybot_bringup test_arms_real.py
 ```
 
+## Gemini LLM Planner
+
+Natural language control of the robot via Gemini's function calling API. Speak or type commands — Gemini plans and executes multi-step robot actions.
+
+### Setup
+
+```bash
+# Install additional dependencies
+pip install google-generativeai google-genai pyaudio
+```
+
+### Running
+
+**Terminal 1: Launch robot (sim or real)**
+```bash
+cd ros2_ws
+source setup_env.bash
+ros2 launch tidybot_bringup sim.launch.py
+```
+
+**Terminal 2: Run the planner**
+```bash
+cd ros2_ws/src/tidybot_bringup/scripts
+
+# Text mode (type commands)
+GEMINI_API_KEY=<your-key> python3 -m planner
+
+# Voice mode (speak commands via Gemini Live API)
+GEMINI_API_KEY=<your-key> python3 -m planner --voice
+```
+
+### Available Actions
+
+| Action | Description |
+|--------|-------------|
+| `scan(query?)` | Rotate base, detect objects via Gemini Vision + RealSense depth |
+| `navigate_to(target)` | Move base to named location or coordinates |
+| `pick_up(object_description)` | Full grasp pipeline: detect → approach → grasp → lift |
+| `place_at(target_description)` | Placement pipeline: approach → lower → release → retract |
+| `open_door()` | Door-opening (WIP — coordinated base+arm motion) |
+| `move_arm(arm, x, y, z)` | Direct arm positioning via IK planner |
+
+### Adding New Actions
+
+Drop a new file in `ros2_ws/src/tidybot_bringup/scripts/planner/tools/`. Subclass `BaseTool`, implement `name`, `description`, `parameters`, and `run()`. It's auto-discovered — no other changes needed.
+
+### Architecture
+
+```
+planner/
+├── main.py              # Entry point (--text or --voice)
+├── config.py            # Constants, named locations, system prompt
+├── core/
+│   ├── ros_context.py   # Shared ROS2 node (all pubs/subs/services)
+│   ├── planner.py       # Gemini chat loop + tool dispatch
+│   └── tool_registry.py # Auto-discovers tools from tools/
+├── tools/               # One file per action (scan, navigate_to, pick_up, etc.)
+│   └── base_tool.py     # Abstract base class
+└── voice/
+    └── gemini_live.py   # Gemini Live API bidirectional audio
+```
+
 ## Repository Structure
 
 ```
@@ -146,6 +208,7 @@ collaborative-robotics-2026/
     ├── setup_env.bash           # Environment setup script
     └── src/
         ├── tidybot_bringup/     # Launch files & test scripts
+        │   └── scripts/planner/ # Gemini LLM planner package
         ├── tidybot_description/ # URDF/XACRO robot model
         ├── tidybot_msgs/        # Custom ROS2 messages
         ├── tidybot_mujoco_bridge/  # MuJoCo-ROS2 bridge
