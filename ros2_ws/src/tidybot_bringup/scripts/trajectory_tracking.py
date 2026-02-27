@@ -71,8 +71,8 @@ class TrajectoryTracker(Node):
         self.duration = self.get_parameter('duration').value
 
         # Trajectory parameters
-        self.radius = 0.5   # meters
-        self.period = 10.0  # seconds
+        self.radius = 1.0   # meters
+        self.period = 60.0  # seconds
 
         # Robot state (to be updated from odometry)
         self.current_x = 0.0
@@ -248,7 +248,7 @@ class TrajectoryTracker(Node):
         omega = 2.0 * self.kp * heading_error
 
         # 9. Apply velocity limits (max_v=1.0, max_omega=2.0)
-        max_v = 1.0
+        max_v = 0.2
         max_omega = 2.0
         v = float(np.clip(v, -max_v, max_v))
         omega = float(np.clip(omega, -max_omega, max_omega))

@@ -29,9 +29,9 @@ class PointCloudMask(Node):
 
         # TODO: test if the aligned_depth_to_color topic is published on our realsense!
         #       if so, we don't have to do physical alignment
-        self.sub_info = self.create_subscription(CameraInfo, '/camera/color/camera_info', self.info_cb, 10)
+        self.sub_info = self.create_subscription(CameraInfo, '/camera/realsense/aligned_depth_to_color/camera_info', self.info_cb, 10)
         self.sub_rgb  = Subscriber(self, Image, '/camera/color/image_raw')
-        self.sub_depth = Subscriber(self, Image, '/camera/aligned_depth_to_color/image_raw')
+        self.sub_depth = Subscriber(self, Image, '/camera/realsense/aligned_depth_to_color/image_raw')
         
         self.pub_cloud = self.create_publisher(PointCloud2, '/banana_points', 10)
 
