@@ -74,7 +74,7 @@ class VoiceInterface:
                 "Install: pip install pyaudio (may need: apt install portaudio19-dev)"
             )
 
-        self.client = genai_live.Client(api_key=config.GEMINI_API_KEY)
+        self.client = genai_live.Client(api_key=config.GOOGLE_API_KEY)
         self.audio = pyaudio.PyAudio()
 
     async def run(self):

@@ -32,9 +32,7 @@ dependencies = [
     "threadpoolctl>=3.6.0",
     "transforms3d>=0.4.1",
     "modern-robotics>=1.1.0",
-    # LLM planner
-    "google-generativeai>=0.8.0",
-    # Voice interface (Gemini Live)
+    # LLM planner (Gemini function calling + Live voice API)
     "google-genai>=1.0.0",
     "pyaudio>=0.2.14",
 ]

@@ -7,19 +7,15 @@ Two modes:
   --voice  Always-on voice via Gemini Live API. Speak commands, hear responses.
 
 Usage:
-  GEMINI_API_KEY=<key> python3 -m planner               # text mode
-  GEMINI_API_KEY=<key> python3 -m planner --voice        # voice mode
-  GEMINI_API_KEY=<key> ros2 run tidybot_bringup planner  # via ROS2
+  GOOGLE_API_KEY=<key> python3 -m planner               # text mode
+  GOOGLE_API_KEY=<key> python3 -m planner --voice        # voice mode
 """
 
 import sys
-import os
-import asyncio
 import argparse
 import threading
 
 import rclpy
-import google.generativeai as genai
 
 from planner import config
 from planner.utils import C, log_info
@@ -34,7 +30,7 @@ def run_text_mode(planner: Planner):
     print(f"{C.BOLD}  TidyBot2 Gemini Planner (text mode){C.RESET}")
     print(f"{C.BOLD}{'='*60}{C.RESET}")
     print(f"{C.DIM}  Type natural language commands. 'quit' to exit.{C.RESET}")
-    print(f"{C.DIM}  Tools auto-discovered: {', '.join(planner.tools.keys())}{C.RESET}")
+    print(f"{C.DIM}  Tools: {', '.join(planner.tools.keys())}{C.RESET}")
     print(f"{C.BOLD}{'='*60}{C.RESET}")
     print()
 
@@ -61,6 +57,7 @@ def run_text_mode(planner: Planner):
 
 def run_voice_mode(planner: Planner):
     """Always-on voice interface via Gemini Live API."""
+    import asyncio
     from planner.voice.gemini_live import VoiceInterface
 
     voice = VoiceInterface(planner)
@@ -69,8 +66,7 @@ def run_voice_mode(planner: Planner):
     print(f"{C.BOLD}{'='*60}{C.RESET}")
     print(f"{C.BOLD}  TidyBot2 Gemini Planner (voice mode){C.RESET}")
     print(f"{C.BOLD}{'='*60}{C.RESET}")
-    print(f"{C.DIM}  Speak naturally. Gemini will plan & execute.{C.RESET}")
-    print(f"{C.DIM}  Press Ctrl+C to stop.{C.RESET}")
+    print(f"{C.DIM}  Speak naturally. Press Ctrl+C to stop.{C.RESET}")
     print(f"{C.BOLD}{'='*60}{C.RESET}")
     print()
 
@@ -88,18 +84,15 @@ def main():
     parser.add_argument('--text', action='store_true', help='Use text CLI (default)')
     args = parser.parse_args()
 
-    # Validate API key
-    if not config.GEMINI_API_KEY:
-        print(f"{C.RED}Error: GEMINI_API_KEY environment variable not set.{C.RESET}")
+    if not config.GOOGLE_API_KEY:
+        print(f"{C.RED}Error: GOOGLE_API_KEY environment variable not set.{C.RESET}")
         sys.exit(1)
-
-    genai.configure(api_key=config.GEMINI_API_KEY)
 
     # Initialize ROS2
     rclpy.init()
     ctx = RosContext()
 
-    # Spin ROS2 in background so callbacks work during tool execution
+    # Spin ROS2 in background
     spin_thread = threading.Thread(target=lambda: rclpy.spin(ctx), daemon=True)
     spin_thread.start()
 

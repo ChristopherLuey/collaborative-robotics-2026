@@ -3,7 +3,7 @@
 import os
 
 # Gemini
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', os.environ.get('GEMINI_API_KEY', ''))
 GEMINI_MODEL = 'gemini-2.0-flash'
 GEMINI_LIVE_MODEL = 'gemini-2.0-flash-live-001'
 

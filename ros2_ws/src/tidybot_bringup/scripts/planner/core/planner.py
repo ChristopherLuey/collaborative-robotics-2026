@@ -1,28 +1,29 @@
 """
-Gemini planner core — manages the chat loop with tool dispatch.
+Gemini planner core — manages the chat session with automatic tool calling.
 
-Handles both text and voice input modalities. The planner:
-1. Receives NL input (text or transcribed speech)
-2. Sends to Gemini with tool definitions
-3. Executes any function calls Gemini returns
-4. Feeds results back to Gemini
-5. Loops until Gemini returns a text response (plan complete)
+Uses the new google-genai SDK which handles:
+  - Auto-generating FunctionDeclarations from Python functions
+  - Automatic function calling (executes tools, feeds results back)
+  - Multi-step planning loops
+
+The planner just sends a message and gets back the final text response.
 """
 
 from typing import Dict, Optional, Callable
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from planner.tools.base_tool import BaseTool
-from planner.core.tool_registry import discover_tools, build_gemini_tools
+from planner.core.tool_registry import discover_tools, build_tool_functions
 from planner.core.ros_context import RosContext
 from planner import config
-from planner.utils import log_tool, log_result, log_error, log_gemini, log_info
+from planner.utils import log_info, log_gemini
 
 
 class Planner:
     """
-    Stateful Gemini planner that dispatches tool calls to registered actions.
+    Stateful Gemini planner with automatic function calling.
 
     Usage:
         planner = Planner(ros_context)
@@ -35,91 +36,55 @@ class Planner:
         # Discover and register tools
         log_info("Registering tools...")
         self.tools: Dict[str, BaseTool] = discover_tools(ctx)
-        self.gemini_tools = build_gemini_tools(self.tools)
+        self.tool_functions = build_tool_functions(self.tools)
 
-        # Initialize Gemini model + chat
-        self.model = genai.GenerativeModel(
-            model_name=config.GEMINI_MODEL,
-            tools=self.gemini_tools,
-            system_instruction=config.SYSTEM_PROMPT,
+        # Initialize google-genai client
+        self.client = genai.Client(api_key=config.GOOGLE_API_KEY)
+
+        # Create chat session with automatic function calling
+        self.chat = self.client.chats.create(
+            model=config.GEMINI_MODEL,
+            config=types.GenerateContentConfig(
+                tools=self.tool_functions,
+                system_instruction=config.SYSTEM_PROMPT,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                    disable=False  # Enabled — SDK calls our functions automatically
+                ),
+            ),
         )
-        self.chat = self.model.start_chat()
+
         log_info(f"Planner ready — {len(self.tools)} tools, model={config.GEMINI_MODEL}")
 
     def reset_chat(self):
         """Start a fresh conversation (clears multi-turn context)."""
-        self.chat = self.model.start_chat()
+        self.chat = self.client.chats.create(
+            model=config.GEMINI_MODEL,
+            config=types.GenerateContentConfig(
+                tools=self.tool_functions,
+                system_instruction=config.SYSTEM_PROMPT,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                    disable=False
+                ),
+            ),
+        )
 
     def execute(self, user_input: str, on_status: Optional[Callable[[str], None]] = None) -> str:
         """
-        Process a natural language command through the full plan-execute loop.
+        Process a natural language command.
+
+        With automatic_function_calling enabled, the SDK handles the full loop:
+          user message → Gemini returns function call → SDK executes our function
+          → SDK sends result back → Gemini returns next call or final text
 
         Args:
             user_input: Natural language command from the user.
-            on_status: Optional callback for intermediate status updates
-                       (used by voice interface to speak progress).
+            on_status: Optional callback for status updates (voice mode).
 
         Returns:
-            Gemini's final text response summarizing what was done.
+            Gemini's final text response.
         """
         response = self.chat.send_message(user_input)
 
-        while response.candidates[0].content.parts:
-            # Extract function calls
-            function_calls = [
-                part for part in response.candidates[0].content.parts
-                if part.function_call.name
-            ]
-
-            if not function_calls:
-                break  # No more tool calls — Gemini returned text
-
-            # Execute each function call
-            tool_responses = []
-            for part in function_calls:
-                fc = part.function_call
-                name = fc.name
-                args = dict(fc.args) if fc.args else {}
-
-                log_tool(name, args)
-
-                # Status callback for voice
-                if on_status:
-                    on_status(f"Executing {name}...")
-
-                # Dispatch to registered tool
-                if name in self.tools:
-                    try:
-                        result_str = self.tools[name].run(**args)
-                    except Exception as e:
-                        result_str = f'{{"status":"error","message":"Tool error: {e}"}}'
-                        log_error(name, str(e))
-                else:
-                    result_str = f'{{"status":"error","message":"Unknown tool: {name}"}}'
-                    log_error(name, f"Not registered")
-
-                log_result(name, result_str)
-
-                tool_responses.append(
-                    genai.protos.Part(
-                        function_response=genai.protos.FunctionResponse(
-                            name=name,
-                            response={"result": result_str}
-                        )
-                    )
-                )
-
-            # Feed results back to Gemini
-            response = self.chat.send_message(
-                genai.protos.Content(parts=tool_responses)
-            )
-
-        # Extract final text
-        text_parts = [
-            part.text for part in response.candidates[0].content.parts
-            if hasattr(part, 'text') and part.text
-        ]
-        final_text = '\n'.join(text_parts) if text_parts else "(no response)"
-
+        final_text = response.text if response.text else "(no response)"
         log_gemini(final_text)
         return final_text

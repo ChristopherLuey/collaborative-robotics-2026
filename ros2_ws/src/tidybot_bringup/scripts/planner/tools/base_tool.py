@@ -4,15 +4,16 @@ Abstract base class for all planner tools.
 To add a new action:
   1. Create a new file in tools/
   2. Subclass BaseTool
-  3. Implement name, description, parameters, and run()
+  3. Implement name, description, and run() with typed parameters + docstring
   4. It's auto-discovered by the registry — no other changes needed.
+
+The new google-genai SDK auto-generates FunctionDeclarations from Python
+functions using their name, docstring, and type annotations. Each tool
+exposes a `callable` property that returns a plain function for this purpose.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
-
-import google.generativeai as genai
-from google.generativeai.types import content_types
+from typing import Any
 
 from planner.core.ros_context import RosContext
 
@@ -26,19 +27,7 @@ class BaseTool(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Tool name matching the Gemini function name (e.g. 'scan')."""
-        ...
-
-    @property
-    @abstractmethod
-    def description(self) -> str:
-        """Tool description for Gemini (explains when/how to use it)."""
-        ...
-
-    @property
-    @abstractmethod
-    def parameters(self) -> Dict[str, Any]:
-        """JSON Schema dict for tool parameters."""
+        """Tool name (e.g. 'scan')."""
         ...
 
     @abstractmethod
@@ -51,10 +40,11 @@ class BaseTool(ABC):
         """
         ...
 
-    def declaration(self) -> genai.protos.FunctionDeclaration:
-        """Build the Gemini FunctionDeclaration proto for this tool."""
-        return genai.protos.FunctionDeclaration(
-            name=self.name,
-            description=self.description,
-            parameters=content_types.to_proto(self.parameters),
-        )
+    @property
+    def callable(self):
+        """
+        Return a plain function suitable for the google-genai SDK's
+        automatic function calling. The SDK reads __name__, __doc__,
+        and type annotations to build FunctionDeclarations automatically.
+        """
+        return self.run

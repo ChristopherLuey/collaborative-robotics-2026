@@ -1,19 +1,14 @@
 """
-Tool registry — auto-discovers tool modules from the tools/ package.
+Tool registry — auto-discovers tool modules and builds callable functions.
 
-Adding a new action:
-  1. Create tools/my_action.py
-  2. Define a class inheriting BaseTool
-  3. It's automatically registered and available to Gemini
-
-No changes needed in the planner, registry, or anywhere else.
+The new google-genai SDK auto-generates FunctionDeclarations from plain Python
+functions (using name, docstring, type annotations). We just need to hand it
+a list of functions.
 """
 
 import importlib
 import pkgutil
-from typing import Dict
-
-import google.generativeai as genai
+from typing import Dict, List, Callable
 
 from planner.tools.base_tool import BaseTool
 from planner.core.ros_context import RosContext
@@ -22,8 +17,8 @@ from planner.utils import log_info
 
 def discover_tools(ctx: RosContext) -> Dict[str, BaseTool]:
     """
-    Import all modules in planner.tools, instantiate any BaseTool subclass found,
-    and return a name→instance mapping.
+    Import all modules in planner.tools, instantiate BaseTool subclasses,
+    return name→instance mapping.
     """
     import planner.tools as tools_pkg
 
@@ -46,9 +41,16 @@ def discover_tools(ctx: RosContext) -> Dict[str, BaseTool]:
     return registry
 
 
-def build_gemini_tools(registry: Dict[str, BaseTool]) -> list:
-    """Build the Gemini Tool proto from all registered tools."""
-    declarations = []
+def build_tool_functions(registry: Dict[str, BaseTool]) -> List[Callable]:
+    """
+    Build a list of plain Python callables for the google-genai SDK.
+    The SDK reads __name__, __doc__, and type annotations to auto-generate
+    FunctionDeclarations — no manual proto building needed.
+    """
+    functions = []
     for tool in registry.values():
-        declarations.append(tool.declaration())
-    return [genai.protos.Tool(function_declarations=declarations)]
+        fn = tool.run
+        # Ensure the function has the right __name__ for the SDK
+        fn.__name__ = tool.name
+        functions.append(fn)
+    return functions
