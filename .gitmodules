@@ -1,0 +1,3 @@
+[submodule "gits/sam3"]
+	path = gits/sam3
+	url = org-16943930@github.com:facebookresearch/sam3.git
