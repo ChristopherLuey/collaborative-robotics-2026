@@ -49,8 +49,14 @@ def build_tool_functions(registry: Dict[str, BaseTool]) -> List[Callable]:
     """
     functions = []
     for tool in registry.values():
-        fn = tool.run
-        # Ensure the function has the right __name__ for the SDK
-        fn.__name__ = tool.name
-        functions.append(fn)
+        import functools
+
+        def _make_fn(t):
+            @functools.wraps(t.run)
+            def fn(**kw):
+                return t.run(**kw)
+            fn.__name__ = t.name
+            return fn
+
+        functions.append(_make_fn(tool))
     return functions
