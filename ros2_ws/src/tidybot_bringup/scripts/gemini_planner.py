@@ -91,7 +91,7 @@ def log_gemini(text: str):
     print(f"{C.MAGENTA}{C.BOLD}🤖 Gemini:{C.RESET} {text}")
 
 
-def log_info(text: str):
+def log_ginfo(text: str):
     print(f"{C.BLUE}ℹ {text}{C.RESET}")
 
 
