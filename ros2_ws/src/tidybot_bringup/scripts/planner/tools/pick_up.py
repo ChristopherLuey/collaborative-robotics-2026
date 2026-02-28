@@ -19,7 +19,7 @@ class PickUpTool(BaseTool):
         return "pick_up"
 
     def run(self, object_description: str) -> str:
-        """Pick up an object. Handles finding it, navigating close, grasping, and lifting.
+        """Pick up ascn object. Handles finding it, navigating close, grasping, and lifting.
 
         Args:
             object_description: Natural language description of the object (e.g. 'red apple', 'the cup on the left').
