@@ -64,15 +64,15 @@ class TrajectoryTracker(Node):
         # Declare and get parameters
         self.declare_parameter('kp', 1.0)
         self.declare_parameter('save_data', True)
-        self.declare_parameter('duration', 20.0)
+        self.declare_parameter('duration',20.0)
 
         self.kp = self.get_parameter('kp').value
         self.save_data = self.get_parameter('save_data').value
         self.duration = self.get_parameter('duration').value
 
         # Trajectory parameters
-        self.radius = 0.5   # meters
-        self.period = 10.0  # seconds
+        self.radius = 1.0   # meters
+        self.period = 60.0  # seconds
 
         # Robot state (to be updated from odometry)
         self.current_x = 0.0
@@ -97,7 +97,7 @@ class TrajectoryTracker(Node):
         # - Message type: Twist
         # - Use: self.create_publisher(MessageType, 'topic_name', queue_size)
         # =====================================================================
-        self.cmd_vel_pub = None  # TODO
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
         # =====================================================================
         # TODO: Create subscriber for odometry
@@ -106,7 +106,7 @@ class TrajectoryTracker(Node):
         # - Callback: self.odom_callback
         # - Use: self.create_subscription(MessageType, 'topic', callback, queue_size)
         # =====================================================================
-        # TODO: Create odometry subscriber
+        self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
 
         # =====================================================================
         # TODO: Create a timer for the control loop
@@ -114,7 +114,7 @@ class TrajectoryTracker(Node):
         # - Callback: self.control_loop
         # - Use: self.create_timer(period, callback)
         # =====================================================================
-        # TODO: Create control loop timer
+        self.create_timer(0.02, self.control_loop)
 
         self.get_logger().info(f'Trajectory Tracker initialized with Kp={self.kp}')
 
@@ -136,8 +136,20 @@ class TrajectoryTracker(Node):
         Update: self.current_x, self.current_y, self.current_theta
         Set self.odom_received = True after first message
         """
-        # TODO: Implement this method
-        pass
+
+        p = msg.pose.pose.position
+        self.current_x = float(p.x)
+        self.current_y = float(p.y)
+
+        q = msg.pose.pose.orientation
+        qx = q.x
+        qy = q.y
+        qz = q.z
+        qw = q.w
+
+        self.current_theta = float(2.0 * np.arctan2(qz, qw)) - np.pi/2
+
+        self.odom_received = True
 
     def get_reference_trajectory(self, t):
         """
@@ -159,9 +171,14 @@ class TrajectoryTracker(Node):
         Returns:
             tuple: (ref_x, ref_y, ref_vx, ref_vy)
         """
-        # TODO: Implement this method
-        # Hint: omega = 2.0 * np.pi / self.period
-        return 0.0, 0.0, 0.0, 0.0
+        
+        omega = 2.0 * np.pi / self.period
+        ref_x = self.radius * np.cos(omega * t)
+        ref_y = self.radius * np.sin(omega * t)
+        ref_vx = -self.radius * omega * np.sin(omega * t)
+        ref_vy =  self.radius * omega * np.cos(omega * t)
+
+        return ref_x, ref_y, ref_vx, ref_vy
 
     def control_loop(self):
         """
@@ -187,8 +204,76 @@ class TrajectoryTracker(Node):
         10. Publish Twist message to cmd_vel_pub
         11. Store data for plotting
         """
-        # TODO: Implement this method
-        pass
+        
+        # 1. Check if odometry has been received and if still running
+        if not self.odom_received or not self.running:
+            return
+
+        # 2. Initialize start_time on first call
+        if self.start_time is None:
+            self.start_time = time.time()
+
+        # 3. Compute elapsed time t
+        t = time.time() - self.start_time
+
+        # 4. Check if duration exceeded (stop if so)
+        if t >= self.duration:
+            # stop robot, save data, and stop running
+            self.stop_robot()
+            self.save_results()
+            self.running = False
+            return
+
+        # 5. Get reference trajectory
+        ref_x, ref_y, ref_vx, ref_vy = self.get_reference_trajectory(t)
+
+        # 6. Compute position errors: error = ref - actual
+        error_x = ref_x - self.current_x
+        error_y = ref_y - self.current_y
+
+        # 7. Compute desired world-frame velocities using control law:
+        vx_des = self.kp * error_x + ref_vx
+        vy_des = self.kp * error_y + ref_vy
+
+        # 8. Convert to robot commands (v, omega)
+        theta = self.current_theta
+        v = vx_des * np.cos(theta) + vy_des * np.sin(theta)
+
+        # desired heading in world frame for the desired velocity vector
+        desired_heading = np.arctan2(vy_des, vx_des)
+        heading_error = desired_heading - theta 
+        # normalize to [-pi, pi]
+        heading_error = (heading_error + np.pi) % (2.0 * np.pi) - np.pi
+
+        omega = 2.0 * self.kp * heading_error
+
+        # 9. Apply velocity limits (max_v=1.0, max_omega=2.0)
+        max_v = 0.2
+        max_omega = 2.0
+        v = float(np.clip(v, -max_v, max_v))
+        omega = float(np.clip(omega, -max_omega, max_omega))
+
+        # 10. Publish Twist message to cmd_vel_pub
+        cmd = Twist()
+        cmd.linear.x = float(v)
+        cmd.angular.z = float(omega)
+        if self.cmd_vel_pub is not None:
+            self.cmd_vel_pub.publish(cmd)
+
+        # 11. Store data for plotting
+        self.data['time'].append(t)
+        self.data['ref_x'].append(ref_x)
+        self.data['ref_y'].append(ref_y)
+        self.data['actual_x'].append(self.current_x)
+        self.data['actual_y'].append(self.current_y)
+        self.data['error_x'].append(error_x)
+        self.data['error_y'].append(error_y)
+
+        self.get_logger().info(
+            f"t={t:.2f} ref_pos=({ref_x:.2f},{ref_y:.2f}) ref_vel=({ref_vx:.2f},{ref_vy:.2f}) pos=({self.current_x:.2f},{self.current_y:.2f}) "
+            f"err=({error_x:.2f},{error_y:.2f}) vx_des={vx_des:.2f} vy_des={vy_des:.2f} "
+            f"v={v:.2f} w={omega:.2f} heading={self.current_theta:.2f} dhead={heading_error:.2f}"
+)
 
     def stop_robot(self):
         """Send zero velocity to stop the robot."""

@@ -15,13 +15,14 @@ Send a target:
 
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import PoseStamped, Pose
 from tidybot_msgs.srv import PlanToTarget
 from sensor_msgs.msg import JointState
 from interbotix_xs_msgs.msg import JointGroupCommand
 from std_msgs.msg import Float64MultiArray
 import numpy as np
 import time
+from scipy.spatial.transform import Rotation as R
 
 
 class TestPlannerReal(Node):
@@ -44,11 +45,7 @@ class TestPlannerReal(Node):
         self.joint_states_received = False
         self.current_joint_positions = {}
         self.create_subscription(JointState, '/joint_states', self._js_callback, 10)
-
-        # NEW: subscribe to xyz commands
-        self.create_subscription(  # ADDED
-            Float64MultiArray, '/right_arm_target_xyz', self._xyz_callback, 10
-        )
+        self.create_subscription(PoseStamped, '/gripper_pose_cmd', self._pose_callback, 10) 
 
         self.get_logger().info('=' * 50)
         self.get_logger().info('TidyBot2 IK Planner (Real Hardware) - XYZ topic control')
@@ -79,18 +76,46 @@ class TestPlannerReal(Node):
             if i < len(msg.position):
                 self.current_joint_positions[name] = msg.position[i]
 
-    def _xyz_callback(self, msg: Float64MultiArray):  # ADDED
-        if len(msg.data) < 3:
-            self.get_logger().warn('Received /right_arm_target_xyz with <3 values; expected [x,y,z]')
-            return
-        x, y, z = float(msg.data[0]), float(msg.data[1]), float(msg.data[2])
-        self.get_logger().info(f'Received target XYZ: ({x:.3f}, {y:.3f}, {z:.3f})')
-        pose = self.create_pose(x, y, z)
-        self.plan_and_execute('right', pose, use_orientation=False, duration=3.0)
+    def _pose_callback(self, msg: PoseStamped):
+        self.get_logger().info(
+            f'Received target pose: {msg.pose.position.x:.3f}, '
+            f'{msg.pose.position.y:.3f}, {msg.pose.position.z:.3f}'
+        )
+        
+        # Convert PoseStamped to Pose
+        target_pose = msg.pose  # Extract the Pose from PoseStamped
+        
+        # Add 10cm offset in z
+        target_pose.position.z += 0.10  
+
+        # Convert current orientation to Rotation object
+        r_current = R.from_quat([
+            target_pose.orientation.x,
+            target_pose.orientation.y,
+            target_pose.orientation.z,
+            target_pose.orientation.w
+        ])
+        
+        # Define a 90° rotation around X-axis
+        r_x90 = R.from_euler('x', 90, degrees=True)
+        
+        # Apply the rotation (r_new = r_current * r_x90)
+        r_new = r_current * r_x90
+        
+        # Write back the rotated quaternion
+        q_new = r_new.as_quat()
+        target_pose.orientation.x = q_new[0]
+        target_pose.orientation.y = q_new[1]
+        target_pose.orientation.z = q_new[2]
+        target_pose.orientation.w = q_new[3]
+
+        # Call the planner
+        self.plan_and_execute('right', target_pose, use_orientation=True, duration=3.0)
 
     def create_pose(self, x: float, y: float, z: float,
                     qw: float = 1.0, qx: float = 0.0,
                     qy: float = 0.0, qz: float = 0.0) -> Pose:
+        
         pose = Pose()
         pose.position.x = x
         pose.position.y = y
@@ -131,7 +156,10 @@ class TestPlannerReal(Node):
         )
 
         result = self.call_service_sync(request)
+
         if result is None:
+            self.get_logger().info(f'  Planning failed, returning to sleep pose')
+            self.go_to_sleep_pose(arm_name)
             return False
 
         if result.success:
@@ -150,7 +178,7 @@ class TestPlannerReal(Node):
         return positions
 
     def go_to_sleep_pose(self, arm_name: str, max_joint_speed: float = 0.5):
-        rclpy.spin_once(self, timeout_sec=0.1)
+        #rclpy.spin_once(self, timeout_sec=0.1)
         current = self.get_arm_positions(arm_name)
         target = np.array(self.SLEEP_POSE)
 

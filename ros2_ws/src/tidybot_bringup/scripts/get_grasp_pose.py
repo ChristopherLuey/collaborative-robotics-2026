@@ -47,45 +47,108 @@ class GripperPoseNode(Node):
 
         # Publish the goal pose of the gripper (position + orientation) for the arm to follow
         self.pose_pub = self.create_publisher(PoseStamped, '/gripper_pose_cmd', 10)
-        
 
-        # Subscriber for joint states
+        # Subscriber for local point cloud
         self.local_pc = None
         self.local_pc_sub = self.create_subscription(
             PointCloud2, '/banana_points', self.local_points_callback, 10
         )
 
-        # Transformation
+        # Transformation setup
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.create_timer(0.05, self.publish_pose)
-        
+
         # Names of the transforms you want to listen to
-        self.camera_frame = 'pan_link'
-        self.base_frame = 'odom'
+        self.camera_frame = None
+        self.base_frame = 'odom'  # Set base frame as 'odom' (change if needed)
 
     def local_points_callback(self, msg):
         """Callback for local points topic."""
-        points = pc2.read_points(
-            msg,
-            field_names=("x", "y", "z"),
-            skip_nans=True
-        )
+        self.camera_frame = msg.header.frame_id  # Store the frame of the incoming point cloud
+        self.local_pc = msg
+        #self.local_pc = list(pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True))
+        #self.get_logger().info(f'Received {len(self.local_pc)} points in {self.camera_frame} frame')
 
-        # Convert structured output to regular Nx3 float32 array
-        self.local_pc = np.array(
-            [[p[0], p[1], p[2]] for p in points],
-            dtype=np.float32
-        )
+    def transform_pointcloud(self, pointcloud, source_frame, target_frame):
+        """Transform point cloud from source_frame to target_frame."""
+        try:
+            points = list(pc2.read_points(pointcloud, field_names=("x", "y", "z"), skip_nans=True))
 
-        # Extract the frame of the point cloud
-        self.camera_frame = msg.header.frame_id
+            # Get the transformation from the source frame to the target frame
+            transform = self.tf_buffer.lookup_transform(target_frame, source_frame, rclpy.time.Time())
 
-        self.get_logger().info(
-            f"Received {self.local_pc.shape[0]} points in frame '{self.camera_frame}'"
-        )
+            # Extract translation and rotation from the transform
+            translation = transform.transform.translation
+            rotation = transform.transform.rotation
 
+            # Convert quaternion to rotation matrix
+            rotation_matrix = quaternion_to_rot_matrix(rotation.x, rotation.y, rotation.z, rotation.w)
+
+            # Create a 4x4 transformation matrix
+            transform_matrix = np.eye(4)
+            transform_matrix[:3, :3] = rotation_matrix
+            transform_matrix[:3, 3] = [translation.x, translation.y, translation.z]
+
+            # Now apply this transformation to each point in the point cloud
+            transformed_points = []
+            for point in points:
+                # Convert each point to homogeneous coordinates (x, y, z, 1)
+                homogeneous_point = np.array([point[0], point[1], point[2], 1.0])
+                
+                # Apply the transformation matrix (4x4 matrix * 4x1 point)
+                transformed_point = transform_matrix @ homogeneous_point
+                
+                # Append the transformed point to the list
+                transformed_points.append(transformed_point[:3])  # We only care about x, y, z
+
+            return transformed_points
+
+        except Exception as e:
+            self.get_logger().error(f"Failed to transform point cloud: {e}")
+            return []
+        
+    def transform_point(self, point: np.ndarray, header, target_frame: str) -> np.ndarray:
+        """
+        Transform a single 3D point from header.frame_id to target_frame.
+
+        Args:
+            point: np.array([x, y, z])
+            header: std_msgs.msg.Header of the original point
+            target_frame: frame to transform the point into
+
+        Returns:
+            np.array([x, y, z]) in target_frame, or None on failure
+        """
+        try:
+            # Lookup transform from source frame (header.frame_id) to target_frame at the timestamp
+            transform = self.tf_buffer.lookup_transform(
+                target_frame, header.frame_id, rclpy.time.Time()
+            )
+
+            # Extract translation and rotation
+            t = transform.transform.translation
+            q = transform.transform.rotation
+
+            # Convert quaternion to rotation matrix
+            R_mat = quaternion_to_rot_matrix(q.x, q.y, q.z, q.w)
+
+            # Construct homogeneous 4x4 transform
+            T = np.eye(4)
+            T[:3, :3] = R_mat
+            T[:3, 3] = [t.x, t.y, t.z]
+
+            # Transform the point
+            point_h = np.hstack([point, 1.0])  # Make it homogeneous
+            transformed_point = (T @ point_h)[:3]
+
+            return transformed_point
+
+        except Exception as e:
+            self.get_logger().error(f"Failed to transform point: {e}")
+            return None
+        
     def get_centroid(self, points):
         """Calculate the centroid of a list of points."""
         if points is None or len(points) == 0:
@@ -94,25 +157,31 @@ class GripperPoseNode(Node):
         y = sum(p[1] for p in points) / len(points)
         z = sum(p[2] for p in points) / len(points)
         return (x, y, z)
-    
+
     def get_axis(self, points):
         """Calculate major and minor axes of the point cloud using PCA."""
         if points is None or len(points) == 0:
             return None, None
-        points_np = np.array(points, dtype=np.float32)
+        # Convert list of tuples into a simple 2D array (shape: Nx3)
+        points_np = np.array([list(p) for p in points])  # Convert to plain float64 array
         pca = PCA(n_components=3)
         pca.fit(points_np)
-        
+
         # Principal axes
         major_axis = pca.components_[0]  # direction of maximum variance
         minor_axis = pca.components_[1]  # direction of second-largest variance
-        
+
         return (major_axis, minor_axis)
 
     def calculate_gripper_pose(self, centroid: np.ndarray, axis: np.ndarray):
+        """Calculate the desired gripper pose based on the centroid and minor axis."""
         pose = PoseStamped()
-        pose.header.stamp = self.get_clock().now().to_msg()
-        pose.header.frame_id = self.base_frame
+        pose.header.stamp = self.get_clock().now().to_msg()  # Add timestamp
+        pose.header.frame_id = self.base_frame  # Set to base frame (odom)
+
+        pose.pose.position.x = centroid[0]
+        pose.pose.position.y = centroid[1]
+        pose.pose.position.z = centroid[2]
 
         # Position
         pose.pose.position.x = float(centroid[0])
@@ -130,44 +199,37 @@ class GripperPoseNode(Node):
         r = R.from_matrix(rot_mat)
         quat = r.as_quat()
 
-        pose.pose.orientation.x = float(quat[0])
-        pose.pose.orientation.y = float(quat[1])
-        pose.pose.orientation.z = float(quat[2])
-        pose.pose.orientation.w = float(quat[3])
+        pose.pose.orientation.x = quat[0]
+        pose.pose.orientation.y = quat[1]
+        pose.pose.orientation.z = quat[2]
+        pose.pose.orientation.w = quat[3]
 
         return pose
 
     def publish_pose(self):
-        if self.local_pc is None or len(self.local_pc) == 0:
+        if self.local_pc is None:
             return
+        # in the direction camera is facing, we want max depth to try and get center of the object
+        # in the xy camera directions, we want centroid.
+        # challenging because we only see a half-shell of the object, pure centroid returns values
+        # too close to the camera.
 
-        # Transform the entire point cloud from camera frame to base frame
-        try:
-            tf_msg = self.tf_buffer.lookup_transform(
-                self.base_frame,
-                self.camera_frame,
-                rclpy.time.Time()
-            )
-            points_base = transform_pointcloud(self.local_pc, tf_msg)
-        except Exception as e:
-            self.get_logger().warn(f"TF lookup failed: {e}")
-            return
+        # Apply transformation to local point cloud
 
-        # Compute centroid and PCA in base frame
-        centroid = self.get_centroid(points_base)
-        if centroid is None:
-            return
+        transformed_pc = self.transform_pointcloud(self.local_pc, self.camera_frame, self.base_frame)
 
-        major_axis, minor_axis = self.get_axis(points_base)
-        if major_axis is None:
-            return
+        local_pc = list(pc2.read_points(self.local_pc, field_names=("x", "y", "z"), skip_nans=True))
+        local_centroid = list(self.get_centroid(local_pc))
+        top_z = sorted(p[2] for p in local_pc)[-20:]          # Take largest 20 z-values
+        local_centroid[2] = float(np.median(top_z))  
+        transformed_centroid = self.transform_point(local_centroid, self.local_pc.header, self.base_frame)
+        
+        if transformed_pc and transformed_centroid is not None:
 
-        # Compute PoseStamped in base frame
-        pose_msg = self.calculate_gripper_pose(np.array(centroid, dtype=np.float32),
-                                            np.array(major_axis, dtype=np.float32))
+            major_axis, _ = self.get_axis(transformed_pc)
 
-        # Publish
-        self.pose_pub.publish(pose_msg)
+            pose_msg = self.calculate_gripper_pose(transformed_centroid, major_axis)
+            self.pose_pub.publish(pose_msg)
 
 def main(args=None):
     rclpy.init(args=args)
