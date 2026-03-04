@@ -18,7 +18,7 @@ Subscriptions:
 - /object_points (PointCloud2): Input object point cloud
 
 Publications:
-- /gripper_pose_cmd (Pose): Target gripper pose
+- /gripper_pose_cmd (PoseStamped): Target gripper pose
 
 Usage:
     # Terminal 1: Start simulation
@@ -151,7 +151,7 @@ class GripperPoseNode(Node):
         
     def get_centroid(self, points):
         """Calculate the centroid of a list of points."""
-        if not points:
+        if points is None or len(points) == 0:
             return None
         x = sum(p[0] for p in points) / len(points)
         y = sum(p[1] for p in points) / len(points)
@@ -160,7 +160,7 @@ class GripperPoseNode(Node):
 
     def get_axis(self, points):
         """Calculate major and minor axes of the point cloud using PCA."""
-        if not points:
+        if points is None or len(points) == 0:
             return None, None
         # Convert list of tuples into a simple 2D array (shape: Nx3)
         points_np = np.array([list(p) for p in points])  # Convert to plain float64 array
@@ -183,16 +183,20 @@ class GripperPoseNode(Node):
         pose.pose.position.y = centroid[1]
         pose.pose.position.z = centroid[2]
 
-        # x align with -z world
-        # y align with minor axis
-        # z orthogonal to both
-        x = np.array([0, 0, -1])
-        y = axis / np.linalg.norm(axis)
-        z = np.cross(x, y)
-        z = z / np.linalg.norm(z)
-        rot_mat = np.column_stack([x, y, z])
-        r = R.from_matrix(rot_mat)
+        # Position
+        pose.pose.position.x = float(centroid[0])
+        pose.pose.position.y = float(centroid[1])
+        pose.pose.position.z = float(centroid[2])
 
+        # Orientation
+        z = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        y = axis - np.dot(axis, z)*z
+        y /= np.linalg.norm(y)
+        x = np.cross(y, z)
+        x /= np.linalg.norm(x)
+
+        rot_mat = np.column_stack((x, y, z))
+        r = R.from_matrix(rot_mat)
         quat = r.as_quat()
 
         pose.pose.orientation.x = quat[0]

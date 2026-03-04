@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """"
 ROS2 node to subscribe to the RGB-D camera and 
 """
