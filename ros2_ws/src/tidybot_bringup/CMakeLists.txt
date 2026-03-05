@@ -40,6 +40,7 @@ install(PROGRAMS
   scripts/pickup_object_real.py
   scripts/camera_to_robot_coordinate.py
   scripts/pointcloud_from_rgbd_to_occupancy.py
+  scripts/approach_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
