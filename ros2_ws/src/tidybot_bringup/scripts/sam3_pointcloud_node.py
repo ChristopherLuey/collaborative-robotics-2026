@@ -30,7 +30,6 @@ Parameters
 """
 
 import numpy as np
-import torch
 import cv2
 from PIL import Image as PILImage
 from sklearn.decomposition import PCA
@@ -46,7 +45,6 @@ from tf2_ros import TransformListener, Buffer
 
 from tidybot_msgs.srv import GetObjectPose
 import zmq
-
 
 REMOTE_IP = "100.77.113.90"
 PORT = 5555
@@ -151,6 +149,7 @@ class SAM3ObjectPoseNode(Node):
         self.camera_frame = msg.header.frame_id
 
     def _image_cb(self, rgb_msg: Image, depth_msg: Image):
+        self.get_logger().info("Received synced RGB and depth frames.")
         self.latest_rgb   = rgb_msg
         self.latest_depth = depth_msg
 
@@ -213,7 +212,7 @@ class SAM3ObjectPoseNode(Node):
             tf_msg = self.tf_buffer.lookup_transform(
                 self.base_frame,
                 self.camera_frame,
-                rclpy.time.Time(),
+                self.latest_rgb.header.stamp,
             )
             points_base = _transform_pointcloud(points_cam, tf_msg)
         except Exception as e:
