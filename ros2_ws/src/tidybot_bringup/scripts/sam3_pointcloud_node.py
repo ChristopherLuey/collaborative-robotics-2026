@@ -31,6 +31,7 @@ Parameters
 
 import numpy as np
 import torch
+import cv2
 from PIL import Image as PILImage
 from sklearn.decomposition import PCA
 from scipy.spatial.transform import Rotation as R
@@ -43,10 +44,12 @@ from cv_bridge import CvBridge
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 from tf2_ros import TransformListener, Buffer
 
-from sam3 import build_sam3_image_model
-from sam3.model.sam3_image_processor import Sam3Processor
-
 from tidybot_msgs.srv import GetObjectPose
+import zmq
+
+
+REMOTE_IP = "100.77.113.90"
+PORT = 5555
 
 
 class SAM3ObjectPoseNode(Node):
@@ -60,6 +63,7 @@ class SAM3ObjectPoseNode(Node):
     def __init__(self):
         super().__init__('sam3_object_pose_node')
 
+        self.server_setup = False
         # ------------------------------------------------------------------ #
         # Parameters                                                           #
         # ------------------------------------------------------------------ #
@@ -123,6 +127,18 @@ class SAM3ObjectPoseNode(Node):
             "SAM3ObjectPoseNode ready.  Call /sam3/get_object_pose to segment."
         )
 
+        self.setup_zmq_connection()
+        
+    def setup_zmq_connection(self):
+        # ZMQ setup
+        self.ctx = zmq.Context()
+        self.sock = self.ctx.socket(zmq.REQ)
+        self.get_logger().info(f"Connecting to tcp://{REMOTE_IP}:{PORT}...")
+        self.sock.connect(f"tcp://{REMOTE_IP}:{PORT}")
+        self.get_logger().info("Connected!")
+
+        self.server_setup = True
+
     # ---------------------------------------------------------------------- #
     # Callbacks                                                                #
     # ---------------------------------------------------------------------- #
@@ -164,13 +180,23 @@ class SAM3ObjectPoseNode(Node):
         bgr   = self.bridge.imgmsg_to_cv2(self.latest_rgb,   desired_encoding='bgr8')
         depth = self.bridge.imgmsg_to_cv2(self.latest_depth, desired_encoding='passthrough')
 
-        pil_img = PILImage.fromarray(bgr[:, :, ::-1].copy().astype(np.uint8))
+        # pil_img = PILImage.fromarray(bgr[:, :, ::-1].copy().astype(np.uint8))
+        rgb_image = bgr[:, :, ::-1].copy().astype(np.uint8)  # numpy RGB array
+
 
         # SAM3 segmentation ----------------------------------------------------
 
         # SEND A REQUEST TO THE SAM3 SERVER
 
-        mask_np = np.zeros(bgr.shape[0], bgr.shape[1])  # TODO, fill in server stuff
+        self.sock.send_json({"shape": rgb_image.shape, "dtype": str(rgb_image.dtype), "prompts": ["banana", "phone"]}, zmq.SNDMORE)
+        self.sock.send(rgb_image.tobytes())
+
+        meta = self.sock.recv_json()
+        data = self.sock.recv()
+        mask_np = np.frombuffer(data, dtype=meta["dtype"]).reshape(meta["shape"])
+
+
+        # mask_np = np.zeros(bgr.shape[0], bgr.shape[1])  # TODO, fill in server stuff
 
         # Back-project to camera-frame points ----------------------------------
         points_cam = self._mask_to_points(mask_np, depth)
