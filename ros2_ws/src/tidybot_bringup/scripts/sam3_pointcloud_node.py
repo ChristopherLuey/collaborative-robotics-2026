@@ -63,42 +63,27 @@ class SAM3ObjectPoseNode(Node):
         # ------------------------------------------------------------------ #
         # Parameters                                                           #
         # ------------------------------------------------------------------ #
-        self.declare_parameter('sam3_confidence', 0.5)
         self.declare_parameter('min_depth_mm',    100)
         self.declare_parameter('max_depth_mm',    5000)
         self.declare_parameter('min_valid_pts',   30)
         self.declare_parameter('base_frame',      'odom')
 
-        sam3_confidence = self.get_parameter('sam3_confidence').value
         self.min_z      = self.get_parameter('min_depth_mm').value
         self.max_z      = self.get_parameter('max_depth_mm').value
         self.min_pts    = self.get_parameter('min_valid_pts').value
         self.base_frame = self.get_parameter('base_frame').value
 
         # ------------------------------------------------------------------ #
-        # SAM3 model                                                           #
+        # Initialize the connection to the sam3 server                         #
         # ------------------------------------------------------------------ #
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.device = device
-        self.get_logger().info(f"Loading SAM3 on device: {device} ...")
-
-        sam3_model = build_sam3_image_model(device=device, eval_mode=True)
-        self.processor = Sam3Processor(
-            sam3_model,
-            device=device,
-            confidence_threshold=sam3_confidence,
-        )
-
-        if device == 'cuda':
-            torch.autocast('cuda', dtype=torch.bfloat16).__enter__()
-
-        self.get_logger().info("SAM3 model loaded.")
+        
+        ##### THIS WILL BE ON SERVER ##### 
 
         # ------------------------------------------------------------------ #
         # Camera state                                                         #
         # ------------------------------------------------------------------ #
         self.fx = self.fy = self.cx = self.cy = None
-        self.camera_frame = 'pan_link'
+        self.camera_frame = None
         self.bridge = CvBridge()
         self.latest_rgb   = None
         self.latest_depth = None
@@ -159,7 +144,8 @@ class SAM3ObjectPoseNode(Node):
 
     def _handle_request(self, request: GetObjectPose.Request,
                         response: GetObjectPose.Response):
-        prompt_text = request.prompt.strip() + "."
+        
+        prompt_text = request.prompt.strip()
         self.get_logger().info(
             f"Service call: '{request.prompt}' -> prompt='{prompt_text}'"
         )
@@ -181,23 +167,10 @@ class SAM3ObjectPoseNode(Node):
         pil_img = PILImage.fromarray(bgr[:, :, ::-1].copy().astype(np.uint8))
 
         # SAM3 segmentation ----------------------------------------------------
-        state = self.processor.set_image(pil_img)
-        self.processor.reset_all_prompts(state)
-        result = self.processor.set_text_prompt(state=state, prompt=prompt_text)
 
-        if 'masks' not in result or len(result['masks']) == 0:
-            response.success = False
-            response.message = f"No detection for '{prompt_text}'."
-            return response
+        # SEND A REQUEST TO THE SAM3 SERVER
 
-        scores  = result['scores']
-        best    = int(scores.argmax())
-        mask_np = result['masks'][best, 0].cpu().numpy()   # (H, W) bool
-
-        self.get_logger().info(
-            f"Detected '{prompt_text}' "
-            f"(score={float(scores[best]):.2f}, mask_px={int(mask_np.sum())})"
-        )
+        mask_np = np.zeros(bgr.shape[0], bgr.shape[1])  # TODO, fill in server stuff
 
         # Back-project to camera-frame points ----------------------------------
         points_cam = self._mask_to_points(mask_np, depth)
