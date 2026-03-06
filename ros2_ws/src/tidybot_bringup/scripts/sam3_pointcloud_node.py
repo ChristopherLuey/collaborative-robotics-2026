@@ -126,16 +126,15 @@ class SAM3ObjectPoseNode(Node):
         )
 
         self.setup_zmq_connection()
-        
+
     def setup_zmq_connection(self):
-        # ZMQ setup
         self.ctx = zmq.Context()
         self.sock = self.ctx.socket(zmq.REQ)
-        self.get_logger().info(f"Connecting to tcp://{REMOTE_IP}:{PORT}...")
-        self.sock.connect(f"tcp://{REMOTE_IP}:{PORT}")
-        self.get_logger().info("Connected!")
 
-        self.server_setup = True
+        address = f"tcp://{REMOTE_IP}:{PORT}"
+        print(f"Connecting to {address}...")
+
+        self.sock.connect(address)
 
     # ---------------------------------------------------------------------- #
     # Callbacks                                                                #
@@ -187,15 +186,13 @@ class SAM3ObjectPoseNode(Node):
 
         # SEND A REQUEST TO THE SAM3 SERVER
 
-        self.sock.send_json({"shape": rgb_image.shape, "dtype": str(rgb_image.dtype), "prompts": ["banana", "phone"]}, zmq.SNDMORE)
+        self.sock.send_json({"shape": rgb_image.shape, "dtype": str(rgb_image.dtype), "prompt": prompt_text}, zmq.SNDMORE)
         self.sock.send(rgb_image.tobytes())
 
         meta = self.sock.recv_json()
         data = self.sock.recv()
         mask_np = np.frombuffer(data, dtype=meta["dtype"]).reshape(meta["shape"])
-
-
-        # mask_np = np.zeros(bgr.shape[0], bgr.shape[1])  # TODO, fill in server stuff
+        print(mask_np.shape)
 
         # Back-project to camera-frame points ----------------------------------
         points_cam = self._mask_to_points(mask_np, depth)
