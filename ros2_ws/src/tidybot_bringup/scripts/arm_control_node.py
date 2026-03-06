@@ -53,7 +53,7 @@ from geometry_msgs.msg import PoseStamped, Pose
 from tidybot_msgs.srv import PlanToTarget, RequestArmMotion
 from sensor_msgs.msg import JointState
 from interbotix_xs_msgs.msg import JointGroupCommand
-from std_msgs.msg import Float64MultiArray, String, Empty
+from std_msgs.msg import Float64MultiArray, String, Empty, Bool
 
 
 GRIPPER_OPEN = 0.0
@@ -80,6 +80,8 @@ class ArmPlanner(Node):
             'right': self.get_clock().now(),
             'left': self.get_clock().now(),
         }
+
+        self.queue_full_pub = self.create_publisher(Bool, '/arm_queue_full', 10)
 
         if not self.plan_client.wait_for_service(timeout_sec=10.0):
             self.get_logger().error('Service not available! Launch with use_planner:=true')
@@ -124,6 +126,10 @@ class ArmPlanner(Node):
         for arm in ['right', 'left']:
             if (now - self.last_cmd_publish[arm]).nanoseconds < 500_000_000:  # 0.5 second threshold for "still moving"
                 self.get_logger().info(f'{arm.capitalize()} arm is still moving...')
+
+                bool_msg = Bool()
+                bool_msg.data = True
+                self.queue_full_pub.publish(bool_msg)
                 return
 
         if self.active_future is not None and self.active_future.done():
@@ -146,6 +152,14 @@ class ArmPlanner(Node):
                 self._set_gripper(self.current_request.arm_name, GRIPPER_CLOSED)
             if next_action == "open":
                 self._set_gripper(self.current_request.arm_name, GRIPPER_OPEN)
+
+        bool_msg = Bool()
+        if self.current_state is not "idle":
+            bool_msg.data = True
+        else:
+            bool_msg.data = False
+
+        self.queue_full_pub.publish(bool_msg)
             
 
     def _start_plan_request(self, arm_name: str, pose: Pose, duration: float = 3.0, use_orientation: bool = True):
