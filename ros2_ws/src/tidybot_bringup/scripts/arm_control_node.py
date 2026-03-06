@@ -71,6 +71,16 @@ class ArmPlanner(Node):
             'left': self.create_publisher(Float64MultiArray, '/left_gripper/cmd', 10),
         }
 
+        self.joint_cmd_sub = {
+            'right': self.create_subscription(Float64MultiArray, '/right_arm/joint_cmd', self._right_joint_state_cb, 10),
+            'left': self.create_subscription(Float64MultiArray, '/left_arm/joint_cmd', self._left_joint_state_cb, 10),
+        }
+
+        self.last_cmd_publish = {
+            'right': self.get_clock().now(),
+            'left': self.get_clock().now(),
+        }
+
         if not self.plan_client.wait_for_service(timeout_sec=10.0):
             self.get_logger().error('Service not available! Launch with use_planner:=true')
             raise RuntimeError('Planning service not available')
@@ -84,17 +94,59 @@ class ArmPlanner(Node):
             'request_arm_motion',         # Service name
             self._request_arm_motion  # Callback
         )
+        
+        self.job_ticker = self.create_timer(0.1, self._check_job)  # 10Hz timer for job processing
+        self.active_future = None
+        self.action_queue = []
+        self.current_state = "idle"
+        self.gripper_action_start = self.get_clock().now()
 
-    # ---------------- Subscribers ----------------
 
-    def _pose_callback(self, msg: PoseStamped):
-        # Store pose and queue a MOVE job (RIGHT arm)
-        self.last_target_pose = self.copy_pose(msg.pose)
-        p = msg.pose.position
-        self.get_logger().info(f'Received pose_cmd (queued MOVE): ({p.x:.3f}, {p.y:.3f}, {p.z:.3f})')
-        self._enqueue_job({'type': 'MOVE', 'arm': 'right', 'pose': self.last_target_pose})
+    # ---------------- subscribers
+    # we want these literally just to check when arm is done moving
+    def _right_joint_state_cb(self, msg: Float64MultiArray):
+        self.last_cmd_publish['right'] = self.get_clock().now()
+
+    def _left_joint_state_cb(self, msg: Float64MultiArray):
+        self.last_cmd_publish['left'] = self.get_clock().now()
 
     # ---------------- Planner service (async, non-blocking) ----------------
+
+    def _check_job(self):
+
+        self.get_logger().info("checking for job")
+        self.get_logger().info("current state: " + self.current_state)
+        self.get_logger().info("current action queue: " + str(self.action_queue))
+        self.get_logger().info("active future: " + str(self.active_future.done()) if self.active_future else "None")
+
+        # check if arm is currently moving, if it is we just continue:
+        now = self.get_clock().now()
+        for arm in ['right', 'left']:
+            if (now - self.last_cmd_publish[arm]).nanoseconds < 500_000_000:  # 0.5 second threshold for "still moving"
+                self.get_logger().info(f'{arm.capitalize()} arm is still moving...')
+                return
+
+        if self.active_future is not None and self.active_future.done():
+            result = self.active_future.result()
+            if result is not None:
+                self.get_logger().info(f'Plan result: {result}')
+            else:
+                self.get_logger().error('Planner service returned nothing')
+            self.active_future = None
+            self.current_state = "idle"
+
+        if self.current_state == "idle" and self.action_queue is not None and len(self.action_queue) > 0:
+            next_action = self.action_queue.pop(0)
+            self.get_logger().info(f"Next action: {next_action}")
+
+            if next_action == "reach":
+                self.active_future = self._start_plan_request(arm_name=self.current_request.arm_name, pose=self.current_request.target_pose)
+                self.current_state = "working"
+            if next_action == "close":
+                self._set_gripper(self.current_request.arm_name, GRIPPER_CLOSED)
+            if next_action == "open":
+                self._set_gripper(self.current_request.arm_name, GRIPPER_OPEN)
+            
 
     def _start_plan_request(self, arm_name: str, pose: Pose, duration: float = 3.0, use_orientation: bool = True):
         req = PlanToTarget.Request()
@@ -111,48 +163,23 @@ class ArmPlanner(Node):
             f'pos=({p.x:.3f},{p.y:.3f},{p.z:.3f}) use_ori={use_orientation}'
         )
     
-        # Send request async and wait for result
-        future = self.plan_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)  # blocks until the service responds
-
-        if future.result() is not None:
-            self.get_logger().info(f'Plan result received: {future.result()}')
-            return future.result()
-        else:
-            self.get_logger().error('Service call failed')
-            return None
+        return self.plan_client.call_async(req)
+        #self.get_logger().info('Plan request sent, waiting for response...')
 
     # ---------------- Gripper timed publish (non-blocking) ----------------
     
     def _set_gripper(self, arm_name: str, position: float, duration: float = 2.0):
-        """
-        Set gripper position using wrapper node.
-
-        Args:
-            arm_name: 'right' or 'left'
-            position: 0.0 (open) to 1.0 (closed)
-            duration: Time to hold the command (seconds)
-        """
         msg = Float64MultiArray()
         msg.data = [float(position)]
-
         pub = self.gripper_cmd_pubs[arm_name]
+
         state_desc = 'OPEN' if position < 0.5 else 'CLOSED'
+        if position == 0.5:
+            state_desc = 'STOP'
+
         self.get_logger().info(f'{arm_name.capitalize()} gripper -> {state_desc} ({position:.1f})')
 
-        # Publish for duration (reduced rate to avoid bus overload)
-        start = time.time()
-        while (time.time() - start) < duration:
-            pub.publish(msg)
-            rclpy.spin_once(self, timeout_sec=0.05)
-            time.sleep(0.1)  # 10Hz instead of 20Hz
-
-        # Send stop command (0.5 maps to PWM=0 in wrapper)
-        stop_msg = Float64MultiArray()
-        stop_msg.data = [0.5]
-        pub.publish(stop_msg)
-        rclpy.spin_once(self, timeout_sec=0.05)
-
+        pub.publish(msg)
 
     def _request_arm_motion(self, request: RequestArmMotion.Request, response: RequestArmMotion.Response):
         self.get_logger().info(f'Received RequestArmMotion: arm={request.arm_name} motion={request.motion_type}')
@@ -174,7 +201,23 @@ class ArmPlanner(Node):
             response.message = 'Invalid target_pose type'
             return response
         
-        res = self._start_plan_request(arm_name, target_pose, use_orientation=True)
+        self.current_request = request
+        self.action_queue = []
+
+        # now queue up motion.
+        if motion_type in ["grab"]:
+            self.action_queue = ["reach", "close"] #= self._start_plan_request(arm_name, target_pose, use_orientation=True)
+        
+        elif motion_type in ["release"]:
+            self.action_queue = ["reach", "open"] 
+
+        elif motion_type in ["move"]:
+            self.action_queue = ["reach"] 
+
+        response.success = True
+        response.message = f'Sent execution {motion_type} motion for {arm_name} arm'
+        return response
+
         if res is None:
             self.get_logger().info(f'Motion planning failed...')
             response.success = False
