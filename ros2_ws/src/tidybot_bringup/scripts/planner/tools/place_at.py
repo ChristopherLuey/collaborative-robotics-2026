@@ -7,6 +7,9 @@ Falls back to a default position if vision is unavailable.
 
 import json
 import time
+import math
+
+from geometry_msgs.msg import Twist
 
 from planner.tools.base_tool import BaseTool
 from planner.utils import log_info
@@ -46,6 +49,18 @@ class PlaceAtTool(BaseTool):
         # Pick arm based on target Y position
         arm = 'left' if place_y > 0 else 'right'
         log_info(f"Using {arm} arm")
+
+        # Approach if target is beyond arm reach
+        distance = math.sqrt(place_x**2 + place_y**2)
+        if distance > 0.6:
+            log_info(f"Target too far ({distance:.2f}m), approaching...")
+            heading = math.atan2(place_y, place_x)
+            twist = Twist()
+            twist.angular.z = config.BASE_ANGULAR_SPEED * (1 if heading > 0 else -1)
+            self.ctx.publish_twist_for(twist, abs(heading) / config.BASE_ANGULAR_SPEED)
+            twist = Twist()
+            twist.linear.x = config.BASE_LINEAR_SPEED
+            self.ctx.publish_twist_for(twist, (distance - 0.5) / config.BASE_LINEAR_SPEED)
 
         hover_z = place_z + config.DEFAULT_HOVER_CLEARANCE
 
