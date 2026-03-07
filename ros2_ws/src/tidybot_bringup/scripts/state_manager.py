@@ -4,6 +4,7 @@ from rclpy.node import Node
 from std_msgs.msg import String, Bool
 from geometry_msgs.msg import Pose
 from tidybot_msgs.srv import GetObjectPose, RequestArmMotion
+from tidybot_msgs.msg import TaskRequest
 import numpy as np
 
 
@@ -15,16 +16,23 @@ class StateManager(Node):
 
         # Subscriber
         self.transcription_sub = self.create_subscription(
-                                    String,              # Message type
-                                    '/transcription',    # Topic name
+                                    TaskRequest,              # Message type
+                                    '/task_request',    # Topic name
                                     self._transcription_cb,  # Callback
                                     10                   # QoS depth
                                 )
         
+        # internal state variables:
         self.current_request = ""
-        
+        self.inner_state = "" # this can be used to track progress within a task, e.g. "searching for object", "moving to object", "grasping object", etc.
+        self.object = "" # this can be used to track the current object of interest, e.g. "bottle", "door", etc.
+        self.target = "basket" #the thing we are trying to place object in, for task 2
+        self.object_pose = None
+        self.target_pose = None
+        self.base_home = None # TODO set this to the actual home pose of the robot
         self.get_logger().info('Transcription subscriber node started.')
 
+        #rest pose for our arms to return to after a grasp/release action, can be updated later if needed
         self.rest_pose = Pose()
         self.rest_pose.position.x = 0.0
         self.rest_pose.position.y = 0.0
@@ -71,8 +79,75 @@ class StateManager(Node):
         """
         This is called at 10hz, and is where we will check if we have a new request, and if so, execute it.
         """
+    
         if self.current_request == "":
             return
+        
+        if self.current_request == "Task2":
+
+            if self.inner_state == "far search":
+                self.object_pose = self.get_object_pose(self.object, allow_search=True)
+                if self.object_pose is not None:
+                    self.inner_state = "Moving to object"
+                    self.move_base(self.object_pose) #get us started moving!
+                else:
+                    self.get_logger().error('Could not find object in search.')
+                    return
+            if self.inner_state == "Moving to object":
+                if not self.base_ready:
+                    self.get_logger().info('Waiting for base to be ready...')
+                    return
+                else: #this means we arrived!
+                    self.inner_state = "Grasping object"
+                    self.get_object_pose(self.object, allow_search=False) #get an updated pose for grasping, since we should be closer now.
+                    self.pickup_object(self.object)
+            if self.inner_state == "Grasping object":
+                if not self.arms_ready:
+                    self.get_logger().info('Waiting for arms to be ready...')
+                    return
+                else: #this means we should have the object grasped!
+                    self.inner_state = "Searching for target"
+            if self.inner_state == "Searching for target":
+                self.target_pose = self.get_object_pose(self.target, allow_search=True)
+                if self.object_pose is not None:
+                    self.inner_state = "Moving to object"
+                    self.move_base(self.object_pose) #get us started moving!
+                else:
+                    self.get_logger().error('Could not find target in search.')
+                    return
+            if self.inner_state == "Moving to target":
+                if not self.base_ready:
+                    self.get_logger().info('Waiting for base to be ready...')
+                    return
+                else: #this means we arrived!
+                    self.inner_state = "Releasing object"
+                    self.get_object_pose(self.target, allow_search=False) #get an updated pose for releasing, since we should be closer now.
+                    self.stow_object(self.object, self.target)
+                    self.inner_state = "Releasing object"
+            if self.inner_state == "Releasing object":
+                if not self.arms_ready:
+                    self.get_logger().info('Waiting for arms to be ready...')
+                    return
+                else: #this means we should have the object released!
+                    self.move_base(self.base_home) #move back to rest pose
+                    self.inner_state = "Returning to Home"
+            if self.inner_state == "Returning to Home":
+                if not self.base_ready:
+                    self.get_logger().info('Waiting for base to be ready...')
+                    return
+                else: #this means we are back home and done with the task!
+                    self.inner_state = "idle"
+                    self.current_request = "idle" #transition to idle state, waiting for next request
+            
+            return
+
+
+        if self.current_request == "Task3":
+            self.open_door()
+            self.current_request = ""
+            return
+        
+
         
         if not self.base_ready:
             self.get_logger().info('Waiting for base to be ready...')
@@ -87,7 +162,21 @@ class StateManager(Node):
 
         # TODO parse the request and execute the appropriate high level function
 
+    def _find_base_coordinates(self, target_pose:Pose, distance_threshold:float):
+        """
+        This is a helper function that takes in a target pose (6 DOF), and returns the coordinates that the base should move to (X, Y)
+        """
+        current_base = self.get_base_pose() #current pose of the base
+        object_x = target_pose.position.x
+        object_y = target_pose.position.y
+        Vbo = np.array([object_x - current_base.position.x, object_y - current_base.position.y]) #vector from base to object
+        Vbo_unit = Vbo / np.linalg.norm(Vbo) if np.linalg.norm(Vbo) != 0 else np.array([0, 0]) #unit vector from base to object
+        desired_base_coordinates = Vbo - distance_threshold * Vbo_unit
+        global_desired_base_coordinates = desired_base_coordinates + np.array([current_base.position.x, current_base.position.y])
 
+        return global_desired_base_coordinates
+
+        return relative_pose
     def _base_status_cb(self, msg: Bool):
         """Called whenever a message is published to /base/goal_reached."""
         if msg.data:
@@ -106,10 +195,13 @@ class StateManager(Node):
 
         self.arms_ready = not msg.data
 
-    def _transcription_cb(self, msg: String):
+    def _transcription_cb(self, msg: TaskRequest):
         """Called whenever a message is published to /transcription."""
         self.get_logger().info(f'Received transcription: "{msg.data}"')
-        self.current_request = msg.data
+        self.base_home = self.get_base_pose()
+        self.current_request = msg.TaskType #e.g. "Task1", "Task2", "Task3"
+        self.object = msg.Object #what we are looking for
+        self.inner_state = "far search"
 
     # ---------- high level functions ----------
     def pickup_object(self, object_label:str, max_attempts:int=3):
