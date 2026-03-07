@@ -41,6 +41,7 @@ install(PROGRAMS
   scripts/camera_to_robot_coordinate.py
   scripts/get_grasp_pose.py
   scripts/gemini_planner.py
+  scripts/sam3_pointcloud_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
