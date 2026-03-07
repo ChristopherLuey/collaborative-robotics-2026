@@ -124,6 +124,13 @@ class RosContext(Node):
 
     # ── Convenience methods (used by multiple tools) ────────────────
 
+    def _wait_for_future(self, future, timeout_sec: float):
+        """Wait for an async service future. Works when node is spun in a background thread."""
+        deadline = time.time() + timeout_sec
+        while not future.done() and time.time() < deadline:
+            time.sleep(0.05)
+        return future.done()
+
     def plan_and_execute(self, arm_name: str, x: float, y: float, z: float,
                          duration: float = None, use_orientation: bool = False) -> bool:
         """Call PlanToTarget for position-only IK. Returns True on success."""
@@ -146,9 +153,7 @@ class RosContext(Node):
         request.max_condition_number = config.IK_MAX_CONDITION_NUMBER
 
         future = self.plan_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=config.IK_TIMEOUT_SEC)
-
-        if not future.done():
+        if not self._wait_for_future(future, config.IK_TIMEOUT_SEC):
             log_error("plan_to_target", "Timed out")
             return False
         if future.exception():
@@ -206,9 +211,7 @@ class RosContext(Node):
         request.prompt = query
 
         future = self.object_pose_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
-
-        if not future.done():
+        if not self._wait_for_future(future, 10.0):
             log_error("object_pose", "Timed out waiting for SAM3 response")
             return None
         if future.exception():
