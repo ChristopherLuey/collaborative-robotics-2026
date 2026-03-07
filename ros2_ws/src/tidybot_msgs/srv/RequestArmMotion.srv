@@ -1,0 +1,25 @@
+# Service hosted by arm node, which allows high level planner to request motion in a simpler
+# form. Abstracts control.
+
+# Which arm to move: "right" or "left"
+string arm_name
+
+# Motion type: "grab" "release" or "move"
+#    grab --> reach to target pose and close gripper
+#    release --> reach to target pose and open gripper
+#    move --> reach to target pose and keep gripper in its current state
+string motion_type
+
+# Target end-effector pose in base_link frame
+geometry_msgs/Pose target_pose
+
+---
+
+# Whether planning succeeded (collision-free, no singularity)
+bool success
+
+# Whether execution was attempted (only if success=true and execute=true)
+bool executed
+
+# Detailed status message
+string message
