@@ -39,7 +39,7 @@ def launch_setup(context, *args, **kwargs):
     # Get model path from TIDYBOT_REPO_ROOT environment variable
     repo_root = os.environ.get('TIDYBOT_REPO_ROOT', '')
     if not repo_root:
-        repo_root = os.path.expanduser('~/Documents/collaborative-robotics-2026')
+        repo_root = os.path.expanduser('~/collaborative-robotics-2026')
 
     # Construct model path using scene argument
     model_path = os.path.join(repo_root, 'simulation', 'assets', 'mujoco', scene)

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """"
 ROS2 node to subscribe to the RGB-D camera and 
 """
@@ -119,7 +120,6 @@ class PointCloudMask(Node):
         self.get_logger().info(f"Z: {np.mean(points[:, 2])} +/- {np.std(points[:, 2])}")    
 
         header = rgb_msg.header  # use color stamp/frame; ensure depth is aligned to color!
-        self.get_logger().info("local pointcloud is in frame:", header.frame_id)
         cloud = point_cloud2.create_cloud_xyz32(header, points)
         self.pub_cloud.publish(cloud)
 

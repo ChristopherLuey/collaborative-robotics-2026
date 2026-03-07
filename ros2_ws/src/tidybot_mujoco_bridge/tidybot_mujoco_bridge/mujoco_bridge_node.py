@@ -85,6 +85,7 @@ class MuJoCoBridgeNode(Node):
 
         # Find model path if not specified
         if not model_path:
+            self.get_logger().info(model_path)
             # Default to the simulation assets
             # When installed, we need to find the repo root from a known location
             # Try environment variable first, then fall back to searching
@@ -106,7 +107,7 @@ class MuJoCoBridgeNode(Node):
             else:
                 # Last resort: assume we're in ros2_ws inside the repo
                 model_path = os.path.expanduser(
-                    '~/Documents/collaborative-robotics-2026/simulation/assets/mujoco/scene_wx250s_bimanual.xml'
+                    '~/collaborative-robotics-2026/simulation/assets/mujoco/scene_wx250s_bimanual.xml'
                 )
 
         self.get_logger().info(f'Loading MuJoCo model from: {model_path}')

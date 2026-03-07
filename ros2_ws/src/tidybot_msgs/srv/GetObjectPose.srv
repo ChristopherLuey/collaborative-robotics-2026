@@ -1,0 +1,17 @@
+# Get object pose via SAM3 segmentation
+# Segments the current camera frame using the given text prompt
+# and returns the object pose in the base frame.
+
+# Text prompt describing the object (e.g. "apple")
+string prompt
+
+---
+
+# Whether a valid pose was found
+bool success
+
+# Object pose in the base frame (centroid + PCA orientation)
+geometry_msgs/PoseStamped pose
+
+# Status/error message
+string message
