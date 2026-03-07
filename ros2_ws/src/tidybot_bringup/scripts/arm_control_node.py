@@ -182,7 +182,7 @@ class ArmPlanner(Node):
 
     # ---------------- Gripper timed publish (non-blocking) ----------------
     
-    def _set_gripper(self, arm_name: str, position: float, duration: float = 2.0):
+    def _set_gripper(self  , arm_name: str, position: float, duration: float = 2.0):
         msg = Float64MultiArray()
         msg.data = [float(position)]
         pub = self.gripper_cmd_pubs[arm_name]
@@ -216,17 +216,16 @@ class ArmPlanner(Node):
             return response
         
         self.current_request = request
-        self.action_queue = []
 
         # now queue up motion.
-        if motion_type in ["grab"]:
-            self.action_queue = ["reach", "close"] #= self._start_plan_request(arm_name, target_pose, use_orientation=True)
+        if motion_type == "grab":
+            self.action_queue.extend(["reach", "close"]) 
         
-        elif motion_type in ["release"]:
-            self.action_queue = ["reach", "open"] 
+        elif motion_type == "release":
+            self.action_queue.extend(["reach", "open"])
 
-        elif motion_type in ["move"]:
-            self.action_queue = ["reach"] 
+        elif motion_type == "move":
+            self.action_queue.extend(["reach"])
 
         response.success = True
         response.message = f'Sent execution {motion_type} motion for {arm_name} arm'
