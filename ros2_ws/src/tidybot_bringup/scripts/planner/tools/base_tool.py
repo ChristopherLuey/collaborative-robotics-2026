@@ -12,6 +12,7 @@ functions using their name, docstring, and type annotations. Each tool
 exposes a `callable` property that returns a plain function for this purpose.
 """
 
+import inspect
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -48,3 +49,44 @@ class BaseTool(ABC):
         and type annotations to build FunctionDeclarations automatically.
         """
         return self.run
+
+    def declaration(self):
+        """Build a FunctionDeclaration for the Gemini Live API from run() signature."""
+        from google.genai import types as genai_types
+
+        sig = inspect.signature(self.run)
+        properties = {}
+        required = []
+        for param_name, param in sig.parameters.items():
+            if param_name in ('self', 'kwargs'):
+                continue
+            ptype = param.annotation
+            if ptype == float or ptype == int:
+                json_type = "number"
+            elif ptype == bool:
+                json_type = "boolean"
+            else:
+                json_type = "string"
+            properties[param_name] = {"type": json_type, "description": param_name}
+            if param.default is inspect.Parameter.empty:
+                required.append(param_name)
+
+        doc = inspect.getdoc(self.run) or ""
+        # Use text before Args: section as the description
+        description = doc.split("\n\nArgs:")[0].strip()
+        # Parse Args: section for better parameter descriptions
+        if "\nArgs:\n" in doc:
+            args_section = doc.split("\nArgs:\n")[1]
+            for line in args_section.strip().splitlines():
+                line = line.strip()
+                if ":" in line:
+                    pname, pdesc = line.split(":", 1)
+                    pname = pname.strip()
+                    if pname in properties:
+                        properties[pname]["description"] = pdesc.strip()
+
+        return genai_types.FunctionDeclaration(
+            name=self.name,
+            description=description,
+            parameters={"type": "object", "properties": properties, "required": required},
+        )

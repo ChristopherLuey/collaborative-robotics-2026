@@ -17,7 +17,7 @@ from geometry_msgs.msg import Twist, Pose
 from sensor_msgs.msg import Image, CameraInfo, JointState
 from std_msgs.msg import Float64MultiArray
 from tidybot_msgs.msg import ArmCommand, PanTilt
-from tidybot_msgs.srv import PlanToTarget
+from tidybot_msgs.srv import PlanToTarget, GetObjectPose
 
 from planner.utils import log_info, log_error
 from planner import config
@@ -59,6 +59,7 @@ class RosContext(Node):
 
         # ── Service clients ─────────────────────────────────────────
         self.plan_client = self.create_client(PlanToTarget, '/plan_to_target')
+        self.object_pose_client = self.create_client(GetObjectPose, '/sam3/get_object_pose')
 
         # ── Subscribers ─────────────────────────────────────────────
         qos_be = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
@@ -88,6 +89,13 @@ class RosContext(Node):
             log_info("Motion planner service connected.")
         else:
             log_info("Motion planner not available — arm tools will be limited.")
+
+        log_info("Waiting for /sam3/get_object_pose service (5s)...")
+        self.object_pose_available = self.object_pose_client.wait_for_service(timeout_sec=5.0)
+        if self.object_pose_available:
+            log_info("SAM3 object pose service connected.")
+        else:
+            log_info("SAM3 object pose not available — perception tools will fall back to defaults.")
 
     # ── Callbacks ───────────────────────────────────────────────────
 
@@ -183,3 +191,42 @@ class RosContext(Node):
                   f'{arm_name}_forearm_roll', f'{arm_name}_wrist_angle', f'{arm_name}_wrist_rotate']
         with self.joint_lock:
             return np.array([self.current_joint_positions.get(j, 0.0) for j in joints])
+
+    def call_object_isolator(self, query: str):
+        """
+        Call the SAM3 GetObjectPose service with a text prompt.
+
+        Returns a simple namespace with .x, .y, .z attributes on success, or None on failure.
+        """
+        if not self.object_pose_available:
+            log_error("object_pose", "SAM3 service not available")
+            return None
+
+        request = GetObjectPose.Request()
+        request.prompt = query
+
+        future = self.object_pose_client.call_async(request)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
+
+        if not future.done():
+            log_error("object_pose", "Timed out waiting for SAM3 response")
+            return None
+        if future.exception():
+            log_error("object_pose", f"Exception: {future.exception()}")
+            return None
+
+        result = future.result()
+        if not result.success:
+            log_error("object_pose", result.message)
+            return None
+
+        pos = result.pose.pose.position
+        log_info(f"Object '{query}' found at ({pos.x:.3f}, {pos.y:.3f}, {pos.z:.3f})")
+
+        class ObjectPose:
+            pass
+        obj = ObjectPose()
+        obj.x = pos.x
+        obj.y = pos.y
+        obj.z = pos.z
+        return obj
