@@ -77,14 +77,14 @@ class Phoenix6BaseNode(Node):
             raise RuntimeError('Phoenix 6 / Vehicle class not available')
 
         # Declare parameters
-        self.declare_parameter('max_linear_vel', 0.1)  # m/s
-        self.declare_parameter('max_linear_vel_y', 0.1)  # m/s
+        self.declare_parameter('max_linear_vel', 0.5)  # m/s
+        self.declare_parameter('max_linear_vel_y', 0.5)  # m/s
         self.declare_parameter('max_angular_vel', 1.57)  # rad/s (~90 deg/s)
         self.declare_parameter('max_linear_accel', 0.25)  # m/s^2
         self.declare_parameter('max_angular_accel', 0.79)  # rad/s^2
         self.declare_parameter('publish_rate', 50.0)  # Hz for odometry/TF
-        self.declare_parameter('position_tolerance', 0.50)  # meters
-        self.declare_parameter('orientation_tolerance', 0.50)  # radians
+        self.declare_parameter('position_tolerance', 0.02)  # meters
+        self.declare_parameter('orientation_tolerance', 0.05)  # radians
 
         # Get parameters
         max_vx = self.get_parameter('max_linear_vel').get_parameter_value().double_value
@@ -97,8 +97,8 @@ class Phoenix6BaseNode(Node):
         self.orientation_tolerance = self.get_parameter('orientation_tolerance').get_parameter_value().double_value
 
         # Position control gains (matching MuJoCo bridge)
-        self.kp_linear = 0.15
-        self.kp_angular = 0.15
+        self.kp_linear = 2.0
+        self.kp_angular = 3.0
         self.max_linear_vel = max_vx
         self.max_angular_vel = max_vth
 
