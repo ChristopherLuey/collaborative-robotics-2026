@@ -1,67 +1,59 @@
 #!/usr/bin/env python3
 """
-approach_node.py
+approach_node.py (service-only)
 
-Subscribe to an object PoseStamped in the *world* frame (the same frame the
-position controller expects). Compute an approach pose at `approach_distance`
-from the object (so the robot will face the object), convert to the Pose2D
-format accepted by phoenix6_base_node (/base/target_pose), and publish it.
+- Creates service /approach_pose of type tidybot_msgs/srv/ApproachPose
+  Request: geometry_msgs/Pose2D pose, bool relative
+  Response: (empty)
 
-Also subscribes to /base/goal_reached (Bool) and logs when goal is reached.
+- When called, converts relative Pose2D -> world (using /odom) if relative=True,
+  otherwise uses pose as world coords.
 
-Run:
-  python3 tidybot_bringup/scripts/approach_node.py
-or
-  ros2 run tidybot_bringup approach_node   # after adding entrypoint and installing package
-
-Parameters (ROS2 parameters / can be set on CLI):
-  object_topic (str)           topic for object PoseStamped (world frame). default: /detected_object
-  approach_distance (float)    meters to stop away from object. default: 0.30
-  publish_target_topic (str)   where to publish Pose2D for base. default: /base/target_pose
-  sample_mode (bool)           if True and no object seen, publish a single sample target. default: True
-  sample_pose_x, sample_pose_y (floats) sample pose in world frame used in sample_mode.
+- Publishes Pose2D target to /base/target_pose (phoenix6_base_node interface).
+- Listens to /base/goal_reached (Bool) and logs "Goal reached" when seen.
+- Non-blocking service handler (returns immediately after publishing target).
 """
 
 import math
-import time
+import sys
 from typing import Optional
 
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Pose2D
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool
 
+# try to import the custom service; error and exit if not present (explicit failure)
+try:
+    from tidybot_msgs.srv import ApproachPose
+except Exception as e:
+    # We want a clear failure if the service type isn't built yet.
+    # The user will run colcon build to generate the srv types.
+    print("ERROR: tidybot_msgs.srv.ApproachPose not available. Have you added the .srv and built the workspace?")
+    print("Exception:", e)
+    sys.exit(1)
 
-def quat_to_yaw(x, y, z, w) -> float:
-    siny_cosp = 2.0 * (w * z + x * y)
-    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-    return math.atan2(siny_cosp, cosy_cosp)
+
+def rotate_xy(x, y, theta):
+    """Rotate (x,y) by theta radians."""
+    xr = math.cos(theta) * x - math.sin(theta) * y
+    yr = math.sin(theta) * x + math.cos(theta) * y
+    return xr, yr
 
 
 class ApproachNode(Node):
     def __init__(self):
-        super().__init__('approach_node')
+        super().__init__('approach_node_service')
 
         # params
-        self.declare_parameter('object_topic', '/detected_object')
-        self.declare_parameter('approach_distance', 0.30)
+        self.declare_parameter('service_name', '/approach_pose')
         self.declare_parameter('publish_target_topic', '/base/target_pose')
-        self.declare_parameter('sample_mode', False)
-        self.declare_parameter('sample_pose_x', 1.0)
-        self.declare_parameter('sample_pose_y', 1.0)
-        self.declare_parameter('odom_topic', '/odom')  # used to know robot pose (optional)
-        self.declare_parameter('sample_once', True)    # if True, publish sample just once
+        self.declare_parameter('odom_topic', '/odom')
 
-        self.object_topic = self.get_parameter('object_topic').value
-        self.approach_distance = float(self.get_parameter('approach_distance').value)
+        self.service_name = self.get_parameter('service_name').value
         self.publish_target_topic = self.get_parameter('publish_target_topic').value
-        self.sample_mode = bool(self.get_parameter('sample_mode').value)
-        self.sample_pose_x = float(self.get_parameter('sample_pose_x').value)
-        self.sample_pose_y = float(self.get_parameter('sample_pose_y').value)
         self.odom_topic = self.get_parameter('odom_topic').value
-        self.sample_once = bool(self.get_parameter('sample_once').value)
 
         # state
         self.current_x = 0.0
@@ -69,117 +61,117 @@ class ApproachNode(Node):
         self.current_th = 0.0
         self.odom_seen = False
 
-        self.last_object_stamp = None
-        self.last_object_pose: Optional[PoseStamped] = None
-        self.sent_sample = False
-        self.wait_for_goal_reached = False
-
-        # subs / pubs
-        self.create_subscription(PoseStamped, self.object_topic, self.object_cb, 10)
-        self.create_subscription(Odometry, self.odom_topic, self.odom_cb, 10)
-        self.goal_sub = self.create_subscription(Bool, '/base/goal_reached', self.goal_cb, 10)
-
+        # publisher to base controller
         self.target_pub = self.create_publisher(Pose2D, self.publish_target_topic, 10)
 
-        # periodic
-        self.create_timer(0.5, self.timer_cb)
+        # subscribe to odom and to goal_reached (only for logging)
+        self.create_subscription(Odometry, self.odom_topic, self._odom_cb, 10)
+        self.create_subscription(Bool, '/base/goal_reached', self._goal_reached_cb, 10)
 
-        self.get_logger().info(f'ApproachNode listening for objects on: {self.object_topic}')
-        self.get_logger().info(f'Publishing Pose2D targets to: {self.publish_target_topic}')
-        if self.sample_mode:
-            self.get_logger().info(f'Sample mode enabled: sample pose ({self.sample_pose_x}, {self.sample_pose_y})')
+        # create service
+        self.srv = self.create_service(ApproachPose, self.service_name, self._srv_cb)
 
-    # callbacks
-    def odom_cb(self, msg: Odometry):
+        self.get_logger().info(f"ApproachNode (service) ready. Service: {self.service_name} -> publishes Pose2D to {self.publish_target_topic}")
+        self.get_logger().info("Use the service to send approach commands (non-blocking).")
+
+    # odom callback
+    def _odom_cb(self, msg: Odometry):
         p = msg.pose.pose.position
         q = msg.pose.pose.orientation
+        # quaternion to yaw
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        yaw = math.atan2(siny_cosp, cosy_cosp)
         self.current_x = float(p.x)
         self.current_y = float(p.y)
-        self.current_th = quat_to_yaw(q.x, q.y, q.z, q.w)
+        self.current_th = float(yaw) - math.pi/2
         self.odom_seen = True
 
-    def object_cb(self, msg: PoseStamped):
-        # expecting object pose in world frame (the same world frame the controller expects)
-        self.last_object_stamp = self.get_clock().now()
-        self.last_object_pose = msg
-        self.get_logger().info(f'Received object at world ({msg.pose.position.x:.3f}, {msg.pose.position.y:.3f}), frame={msg.header.frame_id}')
-        self.compute_and_send(msg)
-
-    def goal_cb(self, msg: Bool):
+    # goal_reached (log only)
+    def _goal_reached_cb(self, msg: Bool):
         if msg.data:
-            self.get_logger().info('Controller reported: goal_reached == True')
-            # optionally do something else (publish event, chain next action)
-            self.wait_for_goal_reached = False
+            self.get_logger().info("Goal reached (received from /base/goal_reached).")
 
-    # periodic timer
-    def timer_cb(self):
-        # If we have received an object recently we already sent target in object_cb
-        if self.last_object_pose is not None:
-            # optionally check staleness; keep as-is
-            return
+    # service callback (non-blocking)
+    def _srv_cb(self, request, response):
+        """
+        Request fields:
+            request.pose (geometry_msgs/Pose2D)
+            request.relative (bool)
+        Publish Pose2D to /base/target_pose (phoenix6_base_node expected format)
+        """
+        # Read request
+        pose2d = request.pose
+        relative = bool(request.relative)
 
-        # else if sample mode, and haven't sent sample, publish a single sample
-        if self.sample_mode and not self.sent_sample and self.odom_seen:
-            self.get_logger().info('No object detected yet — publishing sample approach target.')
-            sample = PoseStamped()
-            sample.header.stamp = self.get_clock().now().to_msg()
-            sample.header.frame_id = 'world'   # user said "world" frame
-            sample.pose.position.x = self.sample_pose_x
-            sample.pose.position.y = self.sample_pose_y
-            sample.pose.position.z = 0.0
-            sample.pose.orientation.x = 0.0
-            sample.pose.orientation.y = 0.0
-            sample.pose.orientation.z = 0.0
-            sample.pose.orientation.w = 1.0
-            self.compute_and_send(sample)
-            self.sent_sample = self.sample_once
+        self.get_logger().info(
+            f"Service request received: pose=(x={pose2d.x:.3f}, y={pose2d.y:.3f}, th={pose2d.theta:.3f}), relative={relative}"
+        )
 
-    # main logic
-    def compute_and_send(self, pose_stamped: PoseStamped):
-        # sanity: require odom known (to compute approach vector if desired)
+        # Compute world pose
+        world_x, world_y, world_th = self._compute_world_pose(pose2d, relative)
+
+        # Publish target (convert world -> Pose2D expected by phoenix6_base_node)
+        self._publish_target_from_world(world_x, world_y, world_th)
+
+        # Return empty response (non-blocking)
+        return response
+
+    def _compute_world_pose(self, pose2d: Pose2D, relative: bool):
+        """
+        If relative==False: treat pose2d as world-frame pose and return it.
+        If relative==True: treat pose2d as a local displacement (x forward, y left, theta)
+        and convert to world-frame pose by rotating the (x,y) local vector by current_th
+        and adding to the current world position. The returned world_th is current_th + pose2d.theta.
+        If odom not available when relative=True, warn and treat the request as world coords.
+        """
+        if not relative:
+            return float(pose2d.x), float(pose2d.y), float(pose2d.theta)
+
+        # relative == True => interpret pose2d as local displacement (forward,left,delta_theta)
         if not self.odom_seen:
-            self.get_logger().warn('No odom available yet; cannot compute approach. Waiting...')
-            return
+            self.get_logger().warn(
+                "Relative pose requested but /odom not seen yet — treating request.pose as world coords."
+            )
+            return float(pose2d.x), float(pose2d.y), float(pose2d.theta)
 
-        # check frame — we expect 'world' frame (user requested). If header not 'world', we still accept but warn.
-        if pose_stamped.header.frame_id != 'world':
-            self.get_logger().warn(f"Object pose frame is '{pose_stamped.header.frame_id}', expected 'world'. "
-                                   "Make sure pose is provided in world frame (controller expects world coords).")
+        # local displacement (lx forward, ly left)
+        lx = float(pose2d.x)
+        ly = float(pose2d.y)
+        lth = float(pose2d.theta)
 
-        obj_x = float(pose_stamped.pose.position.x)
-        obj_y = float(pose_stamped.pose.position.y)
+        # rotate local displacement into world-frame delta using current heading
+        # (dx,dy) = R(current_th) * (lx, ly)
+        dx = math.cos(self.current_th) * lx - math.sin(self.current_th) * ly
+        dy = math.sin(self.current_th) * lx + math.cos(self.current_th) * ly
 
-        # vector robot -> object in world frame
-        dx = obj_x - self.current_x
-        dy = obj_y - self.current_y
-        dist = math.hypot(dx, dy)
-        if dist < 1e-6:
-            yaw_to_object = 0.0
-        else:
-            yaw_to_object = math.atan2(dy, dx)
+        world_x = self.current_x + dx
+        world_y = self.current_y + dy
+        world_th = self.current_th + lth
 
-        # approach point (world coords): back off by approach_distance along line from object -> robot
-        approach_x = obj_x - self.approach_distance * math.cos(yaw_to_object)
-        approach_y = obj_y - self.approach_distance * math.sin(yaw_to_object)
-        approach_theta = yaw_to_object  # face the object when arriving
+        self.get_logger().info(
+            f"Converted relative pose -> world: local=({lx:.3f},{ly:.3f},th={lth:.3f}) "
+            f"delta=({dx:.3f},{dy:.3f}), world=({world_x:.3f},{world_y:.3f},th={world_th:.3f})"
+        )
+        return world_x, world_y, world_th
 
-        self.get_logger().info(f'Approach point (world): x={approach_x:.3f}, y={approach_y:.3f}, theta={approach_theta:.3f}')
+    def _publish_target_from_world(self, world_x: float, world_y: float, world_th: float):
+        """
+        phoenix6_base_node expects incoming Pose2D such that it does:
+          target_pose.x = msg.y
+          target_pose.y = -msg.x
+        So inverse mapping:
+          msg.x = -world_y
+          msg.y = world_x
+          ## IGNORE INVERSE MAPPING FOR NOW
+        """
+        msg = Pose2D()
+        msg.x = float(world_x)
+        msg.y = float(world_y)
+        msg.theta = float(world_th)
 
-        target = Pose2D()
-        target.x = approach_x
-        target.y = approach_y
-        target.theta = approach_theta
-
-        self.target_pub.publish(target)
-        self.get_logger().info(f'Published Pose2D target: x(front)={target.x:.3f}, y(left)={target.y:.3f}, theta={target.theta:.3f}')
-        # mark that we are waiting for goal_reached notification
-        self.wait_for_goal_reached = True
-
-    # helper: short sleep wrapper
-    def sleep(self, sec: float):
-        t0 = time.time()
-        while time.time() - t0 < sec and rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.01)
+        self.get_logger().info(f"Got a pose, moving -> publishing Pose2D to {self.publish_target_topic}: front={msg.x:.3f}, left={msg.y:.3f}, theta={msg.theta:.3f}")
+        self.target_pub.publish(msg)
 
 
 def main(args=None):

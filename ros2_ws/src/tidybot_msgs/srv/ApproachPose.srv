@@ -1,0 +1,5 @@
+# Request: pose in Pose2D and a relative flag
+geometry_msgs/Pose2D pose
+bool relative
+---
+# Empty response
