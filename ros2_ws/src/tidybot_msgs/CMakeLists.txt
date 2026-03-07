@@ -23,6 +23,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetJointState.srv"
   "srv/PlanToTarget.srv"
   "srv/AudioRecord.srv"
+  "srv/ApproachPose.srv"
   "srv/RequestArmMotion.srv"
   "srv/GetObjectPose.srv"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs builtin_interfaces
