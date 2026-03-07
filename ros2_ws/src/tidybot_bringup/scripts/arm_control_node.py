@@ -182,7 +182,7 @@ class ArmPlanner(Node):
 
     # ---------------- Gripper timed publish (non-blocking) ----------------
     
-    def _set_gripper(self, arm_name: str, position: float, duration: float = 2.0):
+    def _set_gripper(self  , arm_name: str, position: float, duration: float = 2.0):
         msg = Float64MultiArray()
         msg.data = [float(position)]
         pub = self.gripper_cmd_pubs[arm_name]
