@@ -2,7 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, Pose2D
 from tidybot_msgs.srv import GetObjectPose, RequestArmMotion
 from tidybot_msgs.msg import TaskRequest
 import numpy as np
@@ -29,7 +29,9 @@ class StateManager(Node):
         self.target = "basket" #the thing we are trying to place object in, for task 2
         self.object_pose = None
         self.target_pose = None
-        self.base_home = None # TODO set this to the actual home pose of the robot
+        self.base_home = Pose2D() # TODO set this to the actual home pose of the robot
+        self.object_grasp_thresh = 0.15 # how close we need to be to an object to attempt a grasp
+        self.object_release_thresh = 0.15 # how close we need to be to a target location to attempt a release
         self.get_logger().info('Transcription subscriber node started.')
 
         #rest pose for our arms to return to after a grasp/release action, can be updated later if needed
@@ -89,7 +91,8 @@ class StateManager(Node):
                 self.object_pose = self.get_object_pose(self.object, allow_search=True)
                 if self.object_pose is not None:
                     self.inner_state = "Moving to object"
-                    self.move_base(self.object_pose) #get us started moving!
+                    des_base = self._find_base_coordinates(self.object_pose, self.object_grasp_thresh)
+                    self.move_base(des_base) #get us started moving!
                 else:
                     self.get_logger().error('Could not find object in search.')
                     return
@@ -99,19 +102,21 @@ class StateManager(Node):
                     return
                 else: #this means we arrived!
                     self.inner_state = "Grasping object"
-                    self.get_object_pose(self.object, allow_search=False) #get an updated pose for grasping, since we should be closer now.
+                    #self.get_object_pose(self.object, allow_search=False) #get an updated pose for grasping, since we should be closer now.
                     self.pickup_object(self.object)
             if self.inner_state == "Grasping object":
                 if not self.arms_ready:
                     self.get_logger().info('Waiting for arms to be ready...')
                     return
                 else: #this means we should have the object grasped!
+                    self.get_logger().info('Transitioning to searching for target.')
                     self.inner_state = "Searching for target"
             if self.inner_state == "Searching for target":
-                self.target_pose = self.get_object_pose(self.target, allow_search=True)
-                if self.object_pose is not None:
-                    self.inner_state = "Moving to object"
-                    self.move_base(self.object_pose) #get us started moving!
+                self.target_pose = self.get_object_pose(self.target, allow_search=True) #find basket pose
+                if self.target_pose is not None:
+                    des_base = self._find_base_coordinates(self.target_pose, self.object_release_thresh)
+                    self.move_base(des_base) #get us started moving!
+                    self.inner_state = "Moving to target"
                 else:
                     self.get_logger().error('Could not find target in search.')
                     return
@@ -120,8 +125,7 @@ class StateManager(Node):
                     self.get_logger().info('Waiting for base to be ready...')
                     return
                 else: #this means we arrived!
-                    self.inner_state = "Releasing object"
-                    self.get_object_pose(self.target, allow_search=False) #get an updated pose for releasing, since we should be closer now.
+                    #self.get_object_pose(self.target, allow_search=False) #get an updated pose for releasing, since we should be closer now.
                     self.stow_object(self.object, self.target)
                     self.inner_state = "Releasing object"
             if self.inner_state == "Releasing object":
@@ -129,6 +133,7 @@ class StateManager(Node):
                     self.get_logger().info('Waiting for arms to be ready...')
                     return
                 else: #this means we should have the object released!
+                    self.get_logger().info('Returning to home position.')
                     self.move_base(self.base_home) #move back to rest pose
                     self.inner_state = "Returning to Home"
             if self.inner_state == "Returning to Home":
@@ -136,6 +141,7 @@ class StateManager(Node):
                     self.get_logger().info('Waiting for base to be ready...')
                     return
                 else: #this means we are back home and done with the task!
+                    self.get_logger().info('Arrived at home, waiting for next command!')
                     self.inner_state = "idle"
                     self.current_request = "idle" #transition to idle state, waiting for next request
             
@@ -173,8 +179,12 @@ class StateManager(Node):
         Vbo_unit = Vbo / np.linalg.norm(Vbo) if np.linalg.norm(Vbo) != 0 else np.array([0, 0]) #unit vector from base to object
         desired_base_coordinates = Vbo - distance_threshold * Vbo_unit
         global_desired_base_coordinates = desired_base_coordinates + np.array([current_base.position.x, current_base.position.y])
-
-        return global_desired_base_coordinates
+        desired_heading = np.arctan2(Vbo[1], Vbo[0]) #angke the base should be facing to look at the object in world
+        des_base_pose = Pose2D()
+        des_base_pose.x = global_desired_base_coordinates[0]
+        des_base_pose.y = global_desired_base_coordinates[1]
+        des_base_pose.theta = desired_heading
+        return des_base_pose
 
         return relative_pose
     def _base_status_cb(self, msg: Bool):
@@ -369,7 +379,7 @@ class StateManager(Node):
         response = self.arm_client.call(RequestArmMotion.Request(arm_name=arm_name, motion_type="release", target_pose=release_pose))
         response = self.arm_client.call(RequestArmMotion.Request(arm_name=arm_name, motion_type="reach", target_pose=end_pose))
 
-    def move_base(self, target_pose:Pose):
+    def move_base(self, target_pose:Pose2d):
         """
         Move the robot base to the target pose.
         """
