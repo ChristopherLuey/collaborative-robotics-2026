@@ -132,7 +132,7 @@ class SAM3ObjectPoseNode(Node):
         self.sock = self.ctx.socket(zmq.REQ)
 
         address = f"tcp://{REMOTE_IP}:{PORT}"
-        print(f"Connecting to {address}...")
+        self.get_logger().info(f"Connecting to {address}...")
 
         self.sock.connect(address)
 
@@ -148,9 +148,11 @@ class SAM3ObjectPoseNode(Node):
         self.camera_frame = msg.header.frame_id
 
     def _image_cb(self, rgb_msg: Image, depth_msg: Image):
-        self.get_logger().info("Received synced RGB and depth frames.")
+        had_frames = self.latest_rgb is not None
         self.latest_rgb   = rgb_msg
         self.latest_depth = depth_msg
+        if not had_frames:
+            self.get_logger().info("Received first synced RGB and depth frames.")
 
     # ---------------------------------------------------------------------- #
     # Service handler                                                          #
@@ -192,7 +194,7 @@ class SAM3ObjectPoseNode(Node):
         meta = self.sock.recv_json()
         data = self.sock.recv()
         mask_np = np.frombuffer(data, dtype=meta["dtype"]).reshape(meta["shape"])
-        print(mask_np.shape)
+        self.get_logger().info(f"SAM3 mask shape: {mask_np.shape}")
 
         # Back-project to camera-frame points ----------------------------------
         points_cam = self._mask_to_points(mask_np, depth)
