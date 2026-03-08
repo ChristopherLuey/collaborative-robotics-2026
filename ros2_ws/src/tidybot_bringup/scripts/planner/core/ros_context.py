@@ -47,6 +47,7 @@ class RosContext(Node):
         # ── Publishers ──────────────────────────────────────────────
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pan_tilt_pub = self.create_publisher(PanTilt, '/camera/pan_tilt', 10)
+        self.pan_tilt_cmd_pub = self.create_publisher(Float64MultiArray, '/camera/pan_tilt_cmd', 10)
 
         self.arm_cmd_pubs = {
             'right': self.create_publisher(ArmCommand, '/right_arm/cmd', 10),
@@ -68,6 +69,7 @@ class RosContext(Node):
 
         self.latest_rgb = None
         self.latest_depth = None
+        self.rgb_updated = False
         self.camera_info = None
         self.cv_bridge = CvBridge() if CV_AVAILABLE else None
 
@@ -123,6 +125,7 @@ class RosContext(Node):
         if self.cv_bridge:
             try:
                 self.latest_rgb = self.cv_bridge.imgmsg_to_cv2(msg, 'rgb8')
+                self.rgb_updated = True
             except Exception:
                 pass
 
@@ -208,6 +211,16 @@ class RosContext(Node):
             self.cmd_vel_pub.publish(twist)
             time.sleep(dt)
         self.cmd_vel_pub.publish(Twist())
+
+    def set_pan_tilt(self, pan: float, tilt: float):
+        """Command the camera pan-tilt. Publishes to both PanTilt and Float64MultiArray topics."""
+        pt_msg = PanTilt()
+        pt_msg.pan = pan
+        pt_msg.tilt = tilt
+        self.pan_tilt_pub.publish(pt_msg)
+        cmd_msg = Float64MultiArray()
+        cmd_msg.data = [pan, tilt]
+        self.pan_tilt_cmd_pub.publish(cmd_msg)
 
     def capture_image_bytes(self, quality: int = 85) -> Optional[bytes]:
         """Grab latest RGB frame as JPEG bytes for Gemini Vision. Returns None if unavailable."""
