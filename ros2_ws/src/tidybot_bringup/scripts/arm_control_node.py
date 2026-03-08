@@ -52,7 +52,6 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Pose
 from tidybot_msgs.srv import PlanToTarget, RequestArmMotion
 from sensor_msgs.msg import JointState
-from interbotix_xs_msgs.msg import JointGroupCommand
 from std_msgs.msg import Float64MultiArray, String, Empty, Bool
 
 

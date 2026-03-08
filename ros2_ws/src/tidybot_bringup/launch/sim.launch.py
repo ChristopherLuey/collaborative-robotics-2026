@@ -112,6 +112,33 @@ def launch_setup(context, *args, **kwargs):
         }]
     )
 
+    # Arm planner (provides /request_arm_motion)
+    arm_planner = Node(
+        package='tidybot_bringup',
+        executable='arm_control_node.py',
+        name='arm_planner',
+        output='screen',
+        condition=IfCondition(use_motion_planner),
+    )
+
+    # Approach node (provides /approach_pose)
+    approach_node = Node(
+        package='tidybot_bringup',
+        executable='approach_node.py',
+        name='approach_node',
+        output='screen',
+        condition=IfCondition(use_motion_planner),
+    )
+
+    # SAM3 pointcloud node (provides /sam3/get_object_pose)
+    sam3_node = Node(
+        package='tidybot_bringup',
+        executable='sam3_pointcloud_node.py',
+        name='sam3_pointcloud_node',
+        output='screen',
+        condition=IfCondition(use_motion_planner),
+    )
+
     # RViz
     rviz_config = PathJoinSubstitution([pkg_bringup, 'rviz', 'tidybot.rviz'])
     rviz = Node(
@@ -129,6 +156,9 @@ def launch_setup(context, *args, **kwargs):
         right_arm_controller,
         left_arm_controller,
         motion_planner,
+        arm_planner,
+        approach_node,
+        sam3_node,
         rviz,
     ]
 
