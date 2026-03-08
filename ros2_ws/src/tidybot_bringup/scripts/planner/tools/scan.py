@@ -63,7 +63,14 @@ class ScanTool(BaseTool):
                 continue
 
             try:
-                client = genai_client.Client(api_key=config.GOOGLE_API_KEY)
+                if config.USE_VERTEX_AI:
+                    client = genai_client.Client(
+                        vertexai=True,
+                        project=config.VERTEX_PROJECT,
+                        location=config.VERTEX_LOCATION,
+                    )
+                else:
+                    client = genai_client.Client(api_key=config.GOOGLE_API_KEY)
                 prompt = (
                     f"You are a robot's vision system. Describe what objects you see. "
                     f"For each, estimate position relative to camera (left/center/right, near/mid/far). "

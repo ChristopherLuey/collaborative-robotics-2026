@@ -84,8 +84,9 @@ def main():
     parser.add_argument('--text', action='store_true', help='Use text CLI (default)')
     args = parser.parse_args()
 
-    if not config.GOOGLE_API_KEY:
-        print(f"{C.RED}Error: GOOGLE_API_KEY environment variable not set.{C.RESET}")
+    if not config.USE_VERTEX_AI and not config.GOOGLE_API_KEY:
+        print(f"{C.RED}Error: GOOGLE_API_KEY not set and Vertex AI not enabled.{C.RESET}")
+        print(f"{C.RED}Set GOOGLE_API_KEY or USE_VERTEX_AI=true{C.RESET}")
         sys.exit(1)
 
     # Initialize ROS2

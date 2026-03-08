@@ -25,7 +25,7 @@ class MoveArmTool(BaseTool):
         """
         log_info(f"Moving {arm} arm to ({x:.3f}, {y:.3f}, {z:.3f})...")
 
-        success = self.ctx.plan_and_execute(arm, float(x), float(y), float(z))
+        success = self.ctx.request_arm_motion(arm, 'move', float(x), float(y), float(z))
 
         if success:
             return json.dumps({"status": "success", "arm": arm, "position": {"x": x, "y": y, "z": z}})

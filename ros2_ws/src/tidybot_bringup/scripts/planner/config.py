@@ -7,6 +7,11 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', os.environ.get('GEMINI_API_KEY
 GEMINI_MODEL = 'gemini-2.0-flash'
 GEMINI_LIVE_MODEL = 'gemini-2.0-flash-live-001'
 
+# Vertex AI (preferred over API key when available)
+USE_VERTEX_AI = os.environ.get('USE_VERTEX_AI', 'true').lower() in ('1', 'true', 'yes')
+VERTEX_PROJECT = os.environ.get('VERTEX_PROJECT', 'gen-lang-client-0801728030')
+VERTEX_LOCATION = os.environ.get('VERTEX_LOCATION', 'us-central1')
+
 # Named locations (x, y, theta) in world frame
 NAMED_LOCATIONS = {
     "start": (0.0, 0.0, 0.0),

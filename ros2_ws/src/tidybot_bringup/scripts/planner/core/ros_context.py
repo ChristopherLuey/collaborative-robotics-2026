@@ -13,11 +13,11 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-from geometry_msgs.msg import Twist, Pose
+from geometry_msgs.msg import Twist, Pose, Pose2D
 from sensor_msgs.msg import Image, CameraInfo, JointState
 from std_msgs.msg import Float64MultiArray
 from tidybot_msgs.msg import ArmCommand, PanTilt
-from tidybot_msgs.srv import PlanToTarget, GetObjectPose
+from tidybot_msgs.srv import PlanToTarget, GetObjectPose, RequestArmMotion, ApproachPose
 
 from planner.utils import log_info, log_error
 from planner import config
@@ -60,6 +60,8 @@ class RosContext(Node):
         # ── Service clients ─────────────────────────────────────────
         self.plan_client = self.create_client(PlanToTarget, '/plan_to_target')
         self.object_pose_client = self.create_client(GetObjectPose, '/sam3/get_object_pose')
+        self.arm_motion_client = self.create_client(RequestArmMotion, '/request_arm_motion')
+        self.approach_client = self.create_client(ApproachPose, '/approach_pose')
 
         # ── Subscribers ─────────────────────────────────────────────
         qos_be = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
@@ -89,6 +91,20 @@ class RosContext(Node):
             log_info("Motion planner service connected.")
         else:
             log_info("Motion planner not available — arm tools will be limited.")
+
+        log_info("Waiting for /request_arm_motion service (3s)...")
+        self.arm_motion_available = self.arm_motion_client.wait_for_service(timeout_sec=3.0)
+        if self.arm_motion_available:
+            log_info("Arm motion service connected.")
+        else:
+            log_info("Arm motion service not available — will use direct PlanToTarget.")
+
+        log_info("Waiting for /approach_pose service (3s)...")
+        self.approach_available = self.approach_client.wait_for_service(timeout_sec=3.0)
+        if self.approach_available:
+            log_info("Approach service connected.")
+        else:
+            log_info("Approach service not available — will use cmd_vel for navigation.")
 
         log_info("Waiting for /sam3/get_object_pose service (5s)...")
         self.object_pose_available = self.object_pose_client.wait_for_service(timeout_sec=5.0)
@@ -196,6 +212,62 @@ class RosContext(Node):
                   f'{arm_name}_forearm_roll', f'{arm_name}_wrist_angle', f'{arm_name}_wrist_rotate']
         with self.joint_lock:
             return np.array([self.current_joint_positions.get(j, 0.0) for j in joints])
+
+    def request_arm_motion(self, arm_name: str, motion_type: str,
+                           x: float, y: float, z: float) -> bool:
+        """Call RequestArmMotion service (grab/release/move). Returns True on success."""
+        if not self.arm_motion_available:
+            log_error("request_arm_motion", "Service /request_arm_motion not available")
+            return False
+
+        request = RequestArmMotion.Request()
+        request.arm_name = arm_name
+        request.motion_type = motion_type
+        request.target_pose = Pose()
+        request.target_pose.position.x = x
+        request.target_pose.position.y = y
+        request.target_pose.position.z = z
+        request.target_pose.orientation.w = 1.0
+
+        future = self.arm_motion_client.call_async(request)
+        if not self._wait_for_future(future, config.IK_TIMEOUT_SEC):
+            log_error("request_arm_motion", "Timed out")
+            return False
+        if future.exception():
+            log_error("request_arm_motion", f"Exception: {future.exception()}")
+            return False
+
+        result = future.result()
+        if result.success:
+            log_info(f"  Arm motion: {result.message}")
+            return True
+        else:
+            log_error("request_arm_motion", result.message)
+            return False
+
+    def approach_pose(self, x: float, y: float, theta: float, relative: bool = False) -> bool:
+        """Call ApproachPose service for base navigation. Returns True on success."""
+        if not self.approach_available:
+            log_error("approach_pose", "Service /approach_pose not available")
+            return False
+
+        request = ApproachPose.Request()
+        request.pose = Pose2D()
+        request.pose.x = x
+        request.pose.y = y
+        request.pose.theta = theta
+        request.relative = relative
+
+        future = self.approach_client.call_async(request)
+        if not self._wait_for_future(future, 30.0):
+            log_error("approach_pose", "Timed out")
+            return False
+        if future.exception():
+            log_error("approach_pose", f"Exception: {future.exception()}")
+            return False
+
+        log_info(f"  Approach: target ({x:.2f}, {y:.2f}, {theta:.2f})")
+        return True
 
     def call_object_isolator(self, query: str):
         """
