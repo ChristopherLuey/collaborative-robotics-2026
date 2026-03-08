@@ -219,7 +219,7 @@ class SpeechToTextNode(Node):
         task = String()
 
         if "pick" in request_words and "up" in request_words:
-            task.data = "1"
+            task.data = "Task1"
             up_idx = request_words.index("up")
             try:
                 obj.data = request_words[up_idx + 1]
@@ -228,7 +228,7 @@ class SpeechToTextNode(Node):
                 return
 
         elif "put" in request_words and "in" in request_words:
-            task.data = "2"
+            task.data = "Task2"
             
             put_idx = request_words.index("put")
             try:
@@ -238,7 +238,7 @@ class SpeechToTextNode(Node):
                 return
 
         elif "open" in request_words:
-            task.data = "3"
+            task.data = "Task3"
             obj.data = "cabinet"
 
         else:

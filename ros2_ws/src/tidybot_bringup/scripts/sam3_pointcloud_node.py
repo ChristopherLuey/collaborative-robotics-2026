@@ -101,14 +101,14 @@ class SAM3ObjectPoseNode(Node):
         # ------------------------------------------------------------------ #
         self.create_subscription(
             CameraInfo,
-            '/camera/realsense/aligned_depth_to_color/camera_info',
+            '/camera/color/camera_info',
             self._info_cb,
             10,
         )
 
         sub_rgb   = Subscriber(self, Image, '/camera/color/image_raw')
         sub_depth = Subscriber(self, Image,
-                               '/camera/realsense/aligned_depth_to_color/image_raw')
+                               '/camera/depth/image_raw')
         ts = ApproximateTimeSynchronizer([sub_rgb, sub_depth], queue_size=5, slop=0.05)
         ts.registerCallback(self._image_cb)
 
@@ -148,7 +148,7 @@ class SAM3ObjectPoseNode(Node):
         self.camera_frame = msg.header.frame_id
 
     def _image_cb(self, rgb_msg: Image, depth_msg: Image):
-        self.get_logger().info("Received synced RGB and depth frames.")
+        #self.get_logger().info("Received synced RGB and depth frames.")
         self.latest_rgb   = rgb_msg
         self.latest_depth = depth_msg
 
