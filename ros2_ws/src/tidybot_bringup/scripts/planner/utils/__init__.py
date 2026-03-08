@@ -31,6 +31,11 @@ def log_gemini(text: str):
     print(f"{C.MAGENTA}{C.BOLD}🤖 Gemini:{C.RESET} {text}")
 
 
+def log_service(name: str, detail: str = ""):
+    suffix = f" — {detail}" if detail else ""
+    print(f"{C.YELLOW}  ↳ SERVICE:{C.RESET} {C.DIM}{name}{suffix}{C.RESET}")
+
+
 def log_info(text: str):
     print(f"{C.BLUE}ℹ {text}{C.RESET}")
 

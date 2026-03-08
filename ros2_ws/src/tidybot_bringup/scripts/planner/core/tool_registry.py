@@ -12,7 +12,7 @@ from typing import Dict, List, Callable
 
 from planner.tools.base_tool import BaseTool
 from planner.core.ros_context import RosContext
-from planner.utils import log_info
+from planner.utils import log_info, log_tool, log_result, log_error
 
 
 def discover_tools(ctx: RosContext) -> Dict[str, BaseTool]:
@@ -47,14 +47,21 @@ def build_tool_functions(registry: Dict[str, BaseTool]) -> List[Callable]:
     The SDK reads __name__, __doc__, and type annotations to auto-generate
     FunctionDeclarations — no manual proto building needed.
     """
+    import functools
     functions = []
     for tool in registry.values():
-        import functools
 
         def _make_fn(t):
             @functools.wraps(t.run)
             def fn(**kw):
-                return t.run(**kw)
+                log_tool(t.name, kw)
+                try:
+                    result = t.run(**kw)
+                    log_result(t.name, result)
+                    return result
+                except Exception as e:
+                    log_error(t.name, str(e))
+                    raise
             fn.__name__ = t.name
             return fn
 

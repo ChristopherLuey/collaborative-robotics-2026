@@ -19,7 +19,7 @@ from std_msgs.msg import Bool, Float64MultiArray
 from tidybot_msgs.msg import ArmCommand, PanTilt
 from tidybot_msgs.srv import PlanToTarget, GetObjectPose, RequestArmMotion, ApproachPose
 
-from planner.utils import log_info, log_error
+from planner.utils import log_info, log_error, log_service
 from planner import config
 
 try:
@@ -158,6 +158,7 @@ class RosContext(Node):
     def plan_and_execute(self, arm_name: str, x: float, y: float, z: float,
                          duration: float = None, use_orientation: bool = False) -> bool:
         """Call PlanToTarget for position-only IK. Returns True on success."""
+        log_service("/plan_to_target", f"arm={arm_name} pos=({x:.3f}, {y:.3f}, {z:.3f})")
         duration = duration or config.DEFAULT_MOTION_DURATION
 
         if not self.planner_available:
@@ -194,12 +195,14 @@ class RosContext(Node):
 
     def set_gripper(self, arm: str, closed: bool):
         """Open or close a gripper. closed=True → grip, False → release."""
+        log_service(f"/{arm}_gripper/cmd", f"{'close' if closed else 'open'}")
         msg = Float64MultiArray()
         msg.data = [1.0 if closed else 0.0]
         self.gripper_pubs[arm].publish(msg)
 
     def publish_twist_for(self, twist: Twist, duration: float, rate_hz: float = 50.0):
         """Publish a velocity command for a fixed duration, then stop."""
+        log_service("/cmd_vel", f"linear=({twist.linear.x:.2f}, {twist.linear.y:.2f}) angular={twist.angular.z:.2f} duration={duration:.2f}s")
         dt = 1.0 / rate_hz
         for _ in range(int(duration * rate_hz)):
             self.cmd_vel_pub.publish(twist)
@@ -224,6 +227,7 @@ class RosContext(Node):
     def request_arm_motion(self, arm_name: str, motion_type: str,
                            x: float, y: float, z: float) -> bool:
         """Call RequestArmMotion service (grab/release/move). Returns True on success."""
+        log_service("/request_arm_motion", f"arm={arm_name} type={motion_type} pos=({x:.3f}, {y:.3f}, {z:.3f})")
         if not self.arm_motion_available:
             log_error("request_arm_motion", "Service /request_arm_motion not available")
             return False
@@ -255,6 +259,7 @@ class RosContext(Node):
 
     def approach_pose(self, x: float, y: float, theta: float, relative: bool = False) -> bool:
         """Call ApproachPose service for base navigation. Waits for goal_reached. Returns True on success."""
+        log_service("/approach_pose", f"target=({x:.3f}, {y:.3f}, {theta:.3f}) relative={relative}")
         if not self.approach_available:
             log_error("approach_pose", "Service /approach_pose not available")
             return False
@@ -293,6 +298,7 @@ class RosContext(Node):
 
         Returns a simple namespace with .x, .y, .z attributes on success, or None on failure.
         """
+        log_service("/sam3/get_object_pose", f"query='{query}'")
         if not self.object_pose_available:
             log_error("object_pose", "SAM3 service not available")
             return None
