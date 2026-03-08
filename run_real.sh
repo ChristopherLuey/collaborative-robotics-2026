@@ -48,16 +48,34 @@ echo "Hardware PID: $HW_PID"
 echo "Waiting 10s for hardware to initialize..."
 sleep 10
 
+# ── Launch service nodes needed by planner ─────────────────
+SCRIPTS_DIR="$WS/src/tidybot_bringup/scripts"
+
+echo "Starting approach_node.py (/approach_pose service)..."
+python3 "$SCRIPTS_DIR/approach_node.py" &
+APPROACH_PID=$!
+
+echo "Starting pickup_object_real.py (/request_arm_motion service)..."
+python3 "$SCRIPTS_DIR/pickup_object_real.py" &
+ARM_PID=$!
+
+echo "Starting sam3_pointcloud_node.py (/sam3/get_object_pose service)..."
+python3 "$SCRIPTS_DIR/sam3_pointcloud_node.py" &
+SAM3_PID=$!
+
+echo "Waiting 5s for service nodes..."
+sleep 5
+
 # ── Run planner ────────────────────────────────────────────
 echo ""
 echo "Starting planner ($MODE)..."
-cd src/tidybot_bringup/scripts
+cd "$SCRIPTS_DIR"
 
 cleanup() {
     echo ""
     echo "Shutting down..."
-    kill $HW_PID 2>/dev/null
-    wait $HW_PID 2>/dev/null || true
+    kill $SAM3_PID $ARM_PID $APPROACH_PID $HW_PID 2>/dev/null
+    wait $SAM3_PID $ARM_PID $APPROACH_PID $HW_PID 2>/dev/null || true
     echo "Done."
 }
 trap cleanup EXIT INT TERM

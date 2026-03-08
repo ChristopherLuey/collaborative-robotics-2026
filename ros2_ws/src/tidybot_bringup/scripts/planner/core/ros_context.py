@@ -15,7 +15,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from geometry_msgs.msg import Twist, Pose, Pose2D
 from sensor_msgs.msg import Image, CameraInfo, JointState
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Bool, Float64MultiArray
 from tidybot_msgs.msg import ArmCommand, PanTilt
 from tidybot_msgs.srv import PlanToTarget, GetObjectPose, RequestArmMotion, ApproachPose
 
@@ -80,6 +80,10 @@ class RosContext(Node):
         self.joint_lock = threading.Lock()
         self.create_subscription(JointState, '/joint_states', self._joint_state_cb, 10)
 
+        # ── Goal reached (for approach_pose wait) ──────────────────
+        self.goal_reached_event = threading.Event()
+        self.create_subscription(Bool, '/base/goal_reached', self._goal_reached_cb, 10)
+
         # ── Robot state ─────────────────────────────────────────────
         self.holding_object = False
         self.current_pose = (0.0, 0.0, 0.0)  # Dead-reckoned (x, y, theta)
@@ -97,21 +101,21 @@ class RosContext(Node):
         if self.arm_motion_available:
             log_info("Arm motion service connected.")
         else:
-            log_info("Arm motion service not available — will use direct PlanToTarget.")
+            log_info("Arm motion service not available — arm tools will fail.")
 
         log_info("Waiting for /approach_pose service (3s)...")
         self.approach_available = self.approach_client.wait_for_service(timeout_sec=3.0)
         if self.approach_available:
             log_info("Approach service connected.")
         else:
-            log_info("Approach service not available — will use cmd_vel for navigation.")
+            log_info("Approach service not available — navigation tools will fail.")
 
         log_info("Waiting for /sam3/get_object_pose service (5s)...")
         self.object_pose_available = self.object_pose_client.wait_for_service(timeout_sec=5.0)
         if self.object_pose_available:
             log_info("SAM3 object pose service connected.")
         else:
-            log_info("SAM3 object pose not available — perception tools will fall back to defaults.")
+            log_info("SAM3 object pose not available — perception tools will fail.")
 
     # ── Callbacks ───────────────────────────────────────────────────
 
@@ -131,6 +135,10 @@ class RosContext(Node):
 
     def _cam_info_cb(self, msg):
         self.camera_info = msg
+
+    def _goal_reached_cb(self, msg):
+        if msg.data:
+            self.goal_reached_event.set()
 
     def _joint_state_cb(self, msg):
         with self.joint_lock:
@@ -246,10 +254,13 @@ class RosContext(Node):
             return False
 
     def approach_pose(self, x: float, y: float, theta: float, relative: bool = False) -> bool:
-        """Call ApproachPose service for base navigation. Returns True on success."""
+        """Call ApproachPose service for base navigation. Waits for goal_reached. Returns True on success."""
         if not self.approach_available:
             log_error("approach_pose", "Service /approach_pose not available")
             return False
+
+        # Clear the event before sending a new target
+        self.goal_reached_event.clear()
 
         request = ApproachPose.Request()
         request.pose = Pose2D()
@@ -260,13 +271,20 @@ class RosContext(Node):
 
         future = self.approach_client.call_async(request)
         if not self._wait_for_future(future, 30.0):
-            log_error("approach_pose", "Timed out")
+            log_error("approach_pose", "Service call timed out")
             return False
         if future.exception():
             log_error("approach_pose", f"Exception: {future.exception()}")
             return False
 
-        log_info(f"  Approach: target ({x:.2f}, {y:.2f}, {theta:.2f})")
+        log_info(f"  Approach: target ({x:.2f}, {y:.2f}, {theta:.2f}), waiting for goal_reached...")
+
+        # Wait for the base to actually arrive (phoenix6_base_node publishes /base/goal_reached)
+        if not self.goal_reached_event.wait(timeout=30.0):
+            log_error("approach_pose", "Timed out waiting for /base/goal_reached")
+            return False
+
+        log_info("  Approach: goal reached.")
         return True
 
     def call_object_isolator(self, query: str):
