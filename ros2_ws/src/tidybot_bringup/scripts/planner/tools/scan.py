@@ -77,10 +77,11 @@ class ScanTool(BaseTool):
                 # Reinforce camera tilt to ensure it stays pointed down
                 self.ctx.set_pan_tilt(config.CAMERA_PAN, config.CAMERA_TILT)
 
-                # Settle and grab latest frames
+                # Discard any stale frame from the rotation, then wait for
+                # the camera to settle and deliver a fresh post-settle image.
+                self.ctx.rgb_updated = False
                 time.sleep(config.CAMERA_SETTLE_TIME)
-                for _ in range(10):
-                    rclpy.spin_once(self.ctx, timeout_sec=0.05)
+                self._spin_until_fresh_frame(timeout=1.0)
 
                 # Write frame to video
                 self._write_video_frame(video_writer)
@@ -133,6 +134,12 @@ class ScanTool(BaseTool):
             if video_writer is not None:
                 video_writer.release()
                 log_info(f"  Video saved to {video_path}")
+
+    def _spin_until_fresh_frame(self, timeout: float = 1.0):
+        """Spin until a new RGB frame arrives, or timeout."""
+        deadline = time.time() + timeout
+        while not self.ctx.rgb_updated and time.time() < deadline:
+            rclpy.spin_once(self.ctx, timeout_sec=0.05)
 
     def _write_video_frame(self, video_writer):
         """Write the current camera frame to the video, only if a new frame arrived."""
