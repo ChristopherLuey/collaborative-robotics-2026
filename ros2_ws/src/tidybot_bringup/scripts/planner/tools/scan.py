@@ -86,10 +86,17 @@ class ScanTool(BaseTool):
                 # Write frame to video
                 self._write_video_frame(video_writer)
 
-                img_bytes = self.ctx.capture_image_bytes()
+                # Capture image — retry a few times if not available yet
+                img_bytes = None
+                for _attempt in range(3):
+                    img_bytes = self.ctx.capture_image_bytes()
+                    if img_bytes is not None:
+                        break
+                    log_info("  No image yet, waiting...")
+                    self._spin_until_fresh_frame(timeout=1.0)
+
                 if img_bytes is None:
-                    log_info("  No image available, rotating...")
-                    self._rotate(angle_step, video_writer)
+                    log_info("  No image available after retries, skipping step.")
                     continue
 
                 # Save image
@@ -100,7 +107,7 @@ class ScanTool(BaseTool):
                 except Exception:
                     pass
 
-                # Ask Gemini where the object is
+                # Ask Gemini where the object is — only rotate based on its response
                 position = self._detect_position(img_bytes, query)
                 log_info(f"  Detection result: {position}")
 
