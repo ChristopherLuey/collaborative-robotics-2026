@@ -42,6 +42,18 @@ else
     return 1
 fi
 
+# 1.5 Ensure conda/miniforge doesn't shadow system Python.
+#     The .venv has C extensions built for PYTHON_VERSION (e.g. 3.10).
+#     If conda puts a different python3 first on PATH, those imports fail.
+if [ -n "$CONDA_PREFIX" ] || [ -n "$CONDA_EXE" ]; then
+    CURRENT_PY_VERSION=$(python3 --version 2>/dev/null | awk '{print $2}' | cut -d. -f1-2)
+    if [ "$CURRENT_PY_VERSION" != "$PYTHON_VERSION" ]; then
+        conda deactivate 2>/dev/null || true
+        export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "miniforge" | grep -v "anaconda" | grep -v "/conda" | tr '\n' ':' | sed 's/:$//')
+        echo "✓ Deactivated conda (need Python $PYTHON_VERSION for ROS2, had $CURRENT_PY_VERSION)"
+    fi
+fi
+
 # 2. Add uv venv site-packages to PYTHONPATH (for mujoco, mink, numpy, etc.)
 #    This lets ROS2's Python import your uv-managed packages WITHOUT
 #    changing which python binary is used (which would break colcon build)
