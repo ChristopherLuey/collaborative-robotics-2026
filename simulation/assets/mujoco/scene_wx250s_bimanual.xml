@@ -23,7 +23,7 @@
     <light pos="0 0 1.5" directional="true"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
     
-    <body name="banana" pos="3.4 0.8 0.14" euler="90 0 0">
+    <body name="banana" pos="1.4 0.0 0.14" euler="90 0 0">
       <geom type="mesh"
             mesh="banana_mesh"
             rgba="1 1 0 1"

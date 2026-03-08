@@ -32,7 +32,7 @@ class StateManager(Node):
         self.object_pose = None
         self.target_pose = None
         self.base_home = None
-        self.object_grasp_thresh = 0.8 # how close we need to be to an object to attempt a grasp
+        self.object_grasp_thresh = 0.65 # how close we need to be to an object to attempt a grasp
         self.object_release_thresh = 0.8 # how close we need to be to a target location to attempt a release
         self.get_logger().info('Transcription subscriber node started.')
 
@@ -233,9 +233,9 @@ class StateManager(Node):
             #self.get_logger().error(f'Could not find pose for object: {object_label}')
             self.get_logger().info("waiting on vision")
             return False
-    
+        self.get_logger().info(f'Found object pose at {object_pose}, attempting grasp...')
         result = self.grasp_and_hold(arm_name = "right", grasp_pose=object_pose, end_pose=self.rest_pose)
-        return True
+        return result['success']
         
     def stow_object(self, object_label:str, target_label:str, max_attempts:int=3):
         """
