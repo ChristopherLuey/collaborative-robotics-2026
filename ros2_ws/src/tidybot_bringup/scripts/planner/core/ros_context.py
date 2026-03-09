@@ -5,6 +5,7 @@ All tools receive a reference to this context rather than creating their own nod
 This avoids multiple-node complexity and ensures a single consistent view of robot state.
 """
 
+import math
 import time
 import threading
 from typing import Optional
@@ -14,6 +15,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from geometry_msgs.msg import Twist, Pose, Pose2D
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image, CameraInfo, JointState
 from std_msgs.msg import Bool, Float64MultiArray
 from tidybot_msgs.msg import ArmCommand, PanTilt
@@ -86,9 +88,18 @@ class RosContext(Node):
         self.goal_reached_event = threading.Event()
         self.create_subscription(Bool, '/base/goal_reached', self._goal_reached_cb, 10)
 
+        # ── Arm completion (for blocking arm motions) ────────────────
+        self.arm_done_event = threading.Event()
+        self.arm_done_event.set()  # Start as "done" (no motion in progress)
+        self.create_subscription(Bool, '/arm_queue_full', self._arm_queue_cb, 10)
+
+        # ── Odometry (tracks base pose automatically) ───────────────
+        self.pose_lock = threading.Lock()
+        self.create_subscription(Odometry, '/odom', self._odom_cb, 10)
+
         # ── Robot state ─────────────────────────────────────────────
         self.holding_object = False
-        self.current_pose = (0.0, 0.0, 0.0)  # Dead-reckoned (x, y, theta)
+        self.current_pose = (0.0, 0.0, 0.0)  # (x, y, theta) from odometry
 
         # ── Service readiness ───────────────────────────────────────
         log_info("Waiting for /plan_to_target service (5s)...")
@@ -142,6 +153,21 @@ class RosContext(Node):
     def _goal_reached_cb(self, msg):
         if msg.data:
             self.goal_reached_event.set()
+
+    def _arm_queue_cb(self, msg):
+        if msg.data:
+            self.arm_done_event.clear()  # Arm busy
+        else:
+            self.arm_done_event.set()    # Arm idle
+
+    def _odom_cb(self, msg):
+        q = msg.pose.pose.orientation
+        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                         1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        with self.pose_lock:
+            self.current_pose = (msg.pose.pose.position.x,
+                                 msg.pose.pose.position.y,
+                                 yaw)
 
     def _joint_state_cb(self, msg):
         with self.joint_lock:
@@ -264,7 +290,13 @@ class RosContext(Node):
 
         result = future.result()
         if result.success:
-            log_info(f"  Arm motion: {result.message}")
+            log_info(f"  Arm motion queued: {result.message}")
+            # Wait for arm to actually finish executing
+            self.arm_done_event.clear()
+            if not self.arm_done_event.wait(timeout=30.0):
+                log_error("request_arm_motion", "Timed out waiting for arm to finish")
+                return False
+            log_info("  Arm motion complete.")
             return True
         else:
             log_error("request_arm_motion", result.message)

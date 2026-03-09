@@ -78,16 +78,13 @@ class PlaceAtTool(BaseTool):
         log_info(f"Moving above target ({place_x:.3f}, {place_y:.3f}, {hover_z:.3f})...")
         if not self.ctx.request_arm_motion(arm, 'move', place_x, place_y, hover_z):
             return json.dumps({"status": "error", "message": "IK failed for hover position."})
-        time.sleep(2.5)
 
         log_info(f"Lowering and releasing at z={place_z:.3f}...")
         if not self.ctx.request_arm_motion(arm, 'release', place_x, place_y, place_z):
             return json.dumps({"status": "error", "message": "IK failed for place position."})
-        time.sleep(2.0)
 
         log_info("Retracting...")
         self.ctx.request_arm_motion(arm, 'move', place_x, place_y, hover_z + 0.05)
-        time.sleep(2.0)
 
         self.ctx.holding_object = False
 

@@ -74,12 +74,10 @@ class PickUpTool(BaseTool):
         log_info(f"Hovering at z={hover_z:.3f}...")
         if not self.ctx.request_arm_motion(arm, 'move', grasp_x, grasp_y, hover_z):
             return json.dumps({"status": "error", "message": "IK failed for hover position."})
-        time.sleep(2.5)
 
         log_info(f"Descending and grasping at z={grasp_z:.3f}...")
         if not self.ctx.request_arm_motion(arm, 'grab', grasp_x, grasp_y, grasp_z):
             return json.dumps({"status": "error", "message": "IK failed for grasp position."})
-        time.sleep(2.0)
 
         # Verify grasp by checking gripper finger position
         # Prismatic finger joint > 0 means fingers didn't fully close → object present
@@ -94,7 +92,6 @@ class PickUpTool(BaseTool):
             time.sleep(0.5)
             if not self.ctx.request_arm_motion(arm, 'grab', grasp_x, grasp_y, grasp_z):
                 return json.dumps({"status": "error", "message": "IK failed on grasp retry."})
-            time.sleep(2.0)
             with self.ctx.joint_lock:
                 finger_pos = self.ctx.current_joint_positions.get(gripper_joint, 0.0)
             if finger_pos <= 0.005:
@@ -108,8 +105,6 @@ class PickUpTool(BaseTool):
 
         if not self.ctx.request_arm_motion(arm, 'move', grasp_x, grasp_y, lift_z):
             return json.dumps({"status": "error", "message": "IK failed for lift."})
-
-        time.sleep(2.0)
 
         self.ctx.holding_object = True
 

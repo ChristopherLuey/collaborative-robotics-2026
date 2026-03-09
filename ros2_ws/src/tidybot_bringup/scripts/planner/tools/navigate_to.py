@@ -43,7 +43,6 @@ class NavigateToTool(BaseTool):
                 "message": "approach_pose service failed or unavailable.",
             })
 
-        self.ctx.current_pose = (tx, ty, ttheta)
         return json.dumps({
             "status": "success",
             "target": target,
