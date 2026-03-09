@@ -191,6 +191,11 @@ class ArmPlanner(Node):
 
         new = rotate_pose_about_z(req.target_pose, -90)
         req.target_pose = new
+        self.get_logger().info(
+            f'IK request ({arm_name}): '
+            f'odom=({pose.position.x:.3f}, {pose.position.y:.3f}, {pose.position.z:.3f}) '
+            f'-> base_link=({req.target_pose.position.x:.3f}, {req.target_pose.position.y:.3f}, {req.target_pose.position.z:.3f})'
+        )
         req.use_orientation = True
         req.execute = True
         req.duration = float(duration)

@@ -220,6 +220,11 @@ class StateManager(Node):
         des_base_pose.x = global_desired_base_coordinates[0]
         des_base_pose.y = global_desired_base_coordinates[1]
         des_base_pose.theta = desired_heading
+        self.get_logger().info(
+            f'Nav target: base ({current_base.x:.3f}, {current_base.y:.3f}, θ={current_base.theta:.2f}) '
+            f'-> obj ({object_x:.3f}, {object_y:.3f}) '
+            f'-> goal ({des_base_pose.x:.3f}, {des_base_pose.y:.3f}, θ={des_base_pose.theta:.2f}) [odom]'
+        )
         return des_base_pose
 
     def _base_status_cb(self, msg: Bool):
@@ -252,10 +257,13 @@ class StateManager(Node):
 
     def _request_cb(self, msg: TaskRequest):
         """Called whenever a message is published to /task_request."""
-        self.get_logger().info(f'Received request')
         self.base_home = self.get_base_pose()
         self.current_request = msg.task_type.data #e.g. "Task1", "Task2", "Task3"
         self.object = msg.object.data #what we are looking for
+        self.get_logger().info(
+            f'Received request: task={msg.task_type.data}, object={msg.object.data}, '
+            f'home=({self.base_home.x:.3f}, {self.base_home.y:.3f}, θ={self.base_home.theta:.2f}) [odom]'
+        )
         self.inner_state = "far search"
 
     # ---------- high level functions ----------
@@ -374,7 +382,10 @@ class StateManager(Node):
         response = self.vision_future.result()
         self.vision_future = None
         if response.success:
-            self.get_logger().info(f'Found pose for object: {label}')
+            self.get_logger().info(
+                f'Found pose for object: {label} at x={response.pose.pose.position.x:.3f}, '
+                f'y={response.pose.pose.position.y:.3f}, z={response.pose.pose.position.z:.3f} [odom]'
+            )
             return response.pose.pose
         
         else:

@@ -221,6 +221,10 @@ class SAM3ObjectPoseNode(Node):
         # Centroid + PCA orientation -------------------------------------------
         centroid_cam  = points_cam.mean(axis=0)
         centroid_base = points_base.mean(axis=0)
+        self.get_logger().info(
+            f"'{prompt_text}' centroid: cam=({centroid_cam[0]:.3f}, {centroid_cam[1]:.3f}, {centroid_cam[2]:.3f}) "
+            f"base=({centroid_base[0]:.3f}, {centroid_base[1]:.3f}, {centroid_base[2]:.3f}) [{self.base_frame}]"
+        )
 
         pca = PCA(n_components=3)
         pca.fit(points_base)
@@ -231,6 +235,10 @@ class SAM3ObjectPoseNode(Node):
         response.pose    = _compute_pose(centroid_base, major_axis, self.base_frame, stamp)
 
         response.pose.pose = rotate_pose_about_z(response.pose.pose, 180)
+        p = response.pose.pose.position
+        self.get_logger().info(
+            f"'{prompt_text}' final pose: ({p.x:.3f}, {p.y:.3f}, {p.z:.3f}) [{self.base_frame}]"
+        )
 
         response.message = (
             f"Detected '{prompt_text}' with {len(points_base)} points."

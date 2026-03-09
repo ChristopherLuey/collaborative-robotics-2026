@@ -185,7 +185,7 @@ class Phoenix6BaseNode(Node):
             self.target_pose.theta = msg.theta
             self.last_goal_reached = False
             self.get_logger().info(
-                f'Target: forward={msg.x:.2f}m -> world ({self.target_pose.x:.2f}, {self.target_pose.y:.2f})'
+                f'Target pose: ({self.target_pose.x:.3f}, {self.target_pose.y:.3f}, θ={self.target_pose.theta:.2f}) [odom]'
             )
 
     def normalize_angle(self, angle):
@@ -233,7 +233,7 @@ class Phoenix6BaseNode(Node):
                 goal_msg = Bool()
                 goal_msg.data = True
                 self.goal_reached_pub.publish(goal_msg)
-                self.get_logger().info('Goal reached!')
+                self.get_logger().info(f'Goal reached! Final: dist={distance:.3f}m, ori_err={math.degrees(orientation_error):.1f}°')
                 self.last_goal_reached = True
             self.position_control_mode = False
             self.target_pose = None
@@ -266,7 +266,9 @@ class Phoenix6BaseNode(Node):
                 "driving": "Moving toward target...",
                 "final_rotate": "At position, rotating to final orientation...",
             }
-            self.get_logger().info(labels[phase])
+            self.get_logger().info(
+                f'{labels[phase]} dist={distance:.3f}m, heading_err={math.degrees(heading_error):.1f}°, ori_err={math.degrees(orientation_error):.1f}°'
+            )
             self._prev_control_phase = phase
 
         # Apply velocity limits
