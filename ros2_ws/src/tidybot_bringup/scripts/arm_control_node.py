@@ -108,6 +108,8 @@ class ArmPlanner(Node):
         self._prev_queue_len = None
         self._prev_arms_moving = set()
         self.gripper_action_start = self.get_clock().now()
+        self.action_cooldown_sec = 1.5  # delay between queued actions
+        self.last_action_finished = None  # timestamp of last action completion
 
         self.tf_buffer   = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -152,28 +154,42 @@ class ArmPlanner(Node):
                 self.get_logger().error('Planner service returned nothing')
             self.active_future = None
             self.current_state = "idle"
+            self.last_action_finished = self.get_clock().now()
 
         if self.current_state == "idle" and self.action_queue is not None and len(self.action_queue) > 0:
-            next_action = self.action_queue.pop(0)
-            self.get_logger().info(f"Next action: {next_action}")
+            # Wait for cooldown between actions
+            if self.last_action_finished is not None:
+                elapsed = (now - self.last_action_finished).nanoseconds / 1e9
+                if elapsed < self.action_cooldown_sec:
+                    # Still in cooldown — report queue as full so state manager waits
+                    bool_msg = Bool()
+                    bool_msg.data = True
+                    self.queue_full_pub.publish(bool_msg)
+                    return
 
-            if next_action == "reach":
-                self.active_future = self._start_plan_request(arm_name=self.current_request.arm_name, pose=self.current_request.target_pose)
+            action, arm_name, target_pose = self.action_queue.pop(0)
+            self.get_logger().info(f"Next action: {action}")
+
+            if action == "reach":
+                self.active_future = self._start_plan_request(arm_name=arm_name, pose=target_pose)
                 self.current_state = "working"
-            if next_action == "close":
-                self._set_gripper(self.current_request.arm_name, GRIPPER_CLOSED)
-            if next_action == "open":
-                self._set_gripper(self.current_request.arm_name, GRIPPER_OPEN)
+            elif action == "close":
+                self._set_gripper(arm_name, GRIPPER_CLOSED)
+                self.last_action_finished = self.get_clock().now()
+            elif action == "open":
+                self._set_gripper(arm_name, GRIPPER_OPEN)
+                self.last_action_finished = self.get_clock().now()
 
         # Log only when state or queue length changes
         queue_len = len(self.action_queue)
         if self.current_state != self._prev_state or queue_len != self._prev_queue_len:
-            self.get_logger().info(f'State: {self.current_state}, queue: {self.action_queue}')
+            queue_actions = [a[0] for a in self.action_queue]
+            self.get_logger().info(f'State: {self.current_state}, queue: {queue_actions}')
             self._prev_state = self.current_state
             self._prev_queue_len = queue_len
 
         bool_msg = Bool()
-        bool_msg.data = self.current_state != "idle"
+        bool_msg.data = self.current_state != "idle" or len(self.action_queue) > 0
         self.queue_full_pub.publish(bool_msg)
             
 
@@ -238,17 +254,23 @@ class ArmPlanner(Node):
             response.message = 'Invalid target_pose type'
             return response
         
-        self.current_request = request
-
-        # now queue up motion.
+        # now queue up motion. Each entry is (action, arm_name, target_pose).
         if motion_type == "grab":
-            self.action_queue.extend(["open", "reach", "close"]) 
-        
+            self.action_queue.extend([
+                ("open", arm_name, None),
+                ("reach", arm_name, target_pose),
+                ("close", arm_name, None),
+            ])
+
         elif motion_type == "release":
-            self.action_queue.extend(["close", "reach", "open"])
+            self.action_queue.extend([
+                ("close", arm_name, None),
+                ("reach", arm_name, target_pose),
+                ("open", arm_name, None),
+            ])
 
         elif motion_type == "move":
-            self.action_queue.extend(["reach"])
+            self.action_queue.extend([("reach", arm_name, target_pose)])
 
         response.success = True
         response.message = f'Sent execution {motion_type} motion for {arm_name} arm'

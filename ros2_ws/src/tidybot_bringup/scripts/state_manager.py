@@ -145,7 +145,7 @@ class StateManager(Node):
                     else:
                         return
 
-            if self.inner_state == "Grasping object":
+            elif self.inner_state == "Grasping object":
                 if not self.arms_ready:
                     if self._prev_wait_reason != 'arms_grasping':
                         self.get_logger().info('Waiting for arms to be ready...')
@@ -155,7 +155,7 @@ class StateManager(Node):
                     self.get_logger().info('Transitioning to searching for target.')
                     self.inner_state = "Searching for target"
 
-            if self.inner_state == "Searching for target":
+            elif self.inner_state == "Searching for target":
                 self.target_pose = self.get_object_pose(self.target) #find basket pose
                 if self.target_pose is not None:
                     des_base = self._find_base_coordinates(self.target_pose, self.object_release_thresh)
@@ -164,8 +164,8 @@ class StateManager(Node):
                 else:
                     self.get_logger().error('Could not find target in search.')
                     return
-                
-            if self.inner_state == "Moving to target":
+
+            elif self.inner_state == "Moving to target":
                 if not self.base_ready:
                     if self._prev_wait_reason != 'base_moving_to_target':
                         self.get_logger().info('Waiting for base to be ready...')
@@ -178,7 +178,7 @@ class StateManager(Node):
                     self.release_and_hold(arm_name = "right", release_pose=self.target_pose, end_pose=end_pose)
                     self.inner_state = "Releasing object"
 
-            if self.inner_state == "Releasing object":
+            elif self.inner_state == "Releasing object":
                 if not self.arms_ready:
                     if self._prev_wait_reason != 'arms_releasing':
                         self.get_logger().info('Waiting for arms to be ready...')
@@ -188,7 +188,7 @@ class StateManager(Node):
                     self.get_logger().info('Returning to home position.')
                     self.move_base(self.base_home) #move back to rest pose
                     self.inner_state = "Returning to Home"
-            if self.inner_state == "Returning to Home":
+            elif self.inner_state == "Returning to Home":
                 if not self.base_ready:
                     if self._prev_wait_reason != 'base_returning':
                         self.get_logger().info('Waiting for base to be ready...')
@@ -274,7 +274,7 @@ class StateManager(Node):
         end_pose = Pose()
         end_pose.position.x = self.current_pose.position.x
         end_pose.position.y = self.current_pose.position.y
-        end_pose.position.x += 0.2
+        end_pose.position.x += 0.4
         end_pose.position.y += 0.0
         end_pose.position.z = 0.5
         end_pose.orientation.x = 0.0
