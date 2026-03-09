@@ -30,8 +30,6 @@ Parameters
 """
 
 import numpy as np
-import cv2
-from PIL import Image as PILImage
 from sklearn.decomposition import PCA
 from scipy.spatial.transform import Rotation as R
 
@@ -61,25 +59,18 @@ class SAM3ObjectPoseNode(Node):
     def __init__(self):
         super().__init__('sam3_object_pose_node')
 
-        self.server_setup = False
         # ------------------------------------------------------------------ #
         # Parameters                                                           #
         # ------------------------------------------------------------------ #
         self.declare_parameter('min_depth_mm',    100)
         self.declare_parameter('max_depth_mm',    5000)
         self.declare_parameter('min_valid_pts',   30)
-        self.declare_parameter('base_frame',      'odom')
+        self.declare_parameter('base_frame',      'base_link')
 
         self.min_z      = self.get_parameter('min_depth_mm').value
         self.max_z      = self.get_parameter('max_depth_mm').value
         self.min_pts    = self.get_parameter('min_valid_pts').value
         self.base_frame = self.get_parameter('base_frame').value
-
-        # ------------------------------------------------------------------ #
-        # Initialize the connection to the sam3 server                         #
-        # ------------------------------------------------------------------ #
-        
-        ##### THIS WILL BE ON SERVER ##### 
 
         # ------------------------------------------------------------------ #
         # Camera state                                                         #
@@ -89,6 +80,7 @@ class SAM3ObjectPoseNode(Node):
         self.bridge = CvBridge()
         self.latest_rgb   = None
         self.latest_depth = None
+        self._using_hardware = False  # True once real hardware topics arrive
 
         # ------------------------------------------------------------------ #
         # TF                                                                   #
@@ -97,20 +89,36 @@ class SAM3ObjectPoseNode(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         # ------------------------------------------------------------------ #
-        # Subscriptions                                                        #
+        # Subscriptions (prefer real hardware topics, fall back to sim)         #
         # ------------------------------------------------------------------ #
+        # Camera info: prefer real hardware, fall back to sim
         self.create_subscription(
             CameraInfo,
             '/camera/realsense/aligned_depth_to_color/camera_info',
-            self._info_cb,
+            self._info_cb_hardware,
+            10,
+        )
+        self.create_subscription(
+            CameraInfo,
+            '/camera/color/camera_info',
+            self._info_cb_sim,
             10,
         )
 
-        sub_rgb   = Subscriber(self, Image, '/camera/color/image_raw')
-        sub_depth = Subscriber(self, Image,
+        # Synced RGB+depth: real hardware topics (preferred)
+        sub_rgb_real   = Subscriber(self, Image, '/camera/color/image_raw')
+        sub_depth_real = Subscriber(self, Image,
                                '/camera/realsense/aligned_depth_to_color/image_raw')
-        ts = ApproximateTimeSynchronizer([sub_rgb, sub_depth], queue_size=5, slop=0.05)
-        ts.registerCallback(self._image_cb)
+        self._ts_real = ApproximateTimeSynchronizer(
+            [sub_rgb_real, sub_depth_real], queue_size=5, slop=0.05)
+        self._ts_real.registerCallback(self._image_cb_hardware)
+
+        # Synced RGB+depth: sim topics (fallback)
+        sub_rgb_sim   = Subscriber(self, Image, '/camera/color/image_raw')
+        sub_depth_sim = Subscriber(self, Image, '/camera/depth/image_raw')
+        self._ts_sim = ApproximateTimeSynchronizer(
+            [sub_rgb_sim, sub_depth_sim], queue_size=5, slop=0.1)
+        self._ts_sim.registerCallback(self._image_cb_sim)
 
         # ------------------------------------------------------------------ #
         # Service                                                              #
@@ -140,19 +148,45 @@ class SAM3ObjectPoseNode(Node):
     # Callbacks                                                                #
     # ---------------------------------------------------------------------- #
 
-    def _info_cb(self, msg: CameraInfo):
+    def _info_cb_hardware(self, msg: CameraInfo):
+        if not self._using_hardware:
+            self.get_logger().info("Using real hardware camera topics.")
+        self._using_hardware = True
         self.fx = msg.k[0]
         self.fy = msg.k[4]
         self.cx = msg.k[2]
         self.cy = msg.k[5]
         self.camera_frame = msg.header.frame_id
 
-    def _image_cb(self, rgb_msg: Image, depth_msg: Image):
+    def _info_cb_sim(self, msg: CameraInfo):
+        # Only use sim intrinsics if hardware hasn't been seen
+        if self._using_hardware:
+            return
+        self.fx = msg.k[0]
+        self.fy = msg.k[4]
+        self.cx = msg.k[2]
+        self.cy = msg.k[5]
+        self.camera_frame = msg.header.frame_id
+
+    def _image_cb_hardware(self, rgb_msg: Image, depth_msg: Image):
+        if not self._using_hardware:
+            self.get_logger().info("Using real hardware camera topics.")
+        self._using_hardware = True
         had_frames = self.latest_rgb is not None
         self.latest_rgb   = rgb_msg
         self.latest_depth = depth_msg
         if not had_frames:
-            self.get_logger().info("Received first synced RGB and depth frames.")
+            self.get_logger().info("Received first synced RGB+depth frames (hardware).")
+
+    def _image_cb_sim(self, rgb_msg: Image, depth_msg: Image):
+        # Only use sim frames if hardware hasn't been seen
+        if self._using_hardware:
+            return
+        had_frames = self.latest_rgb is not None
+        self.latest_rgb   = rgb_msg
+        self.latest_depth = depth_msg
+        if not had_frames:
+            self.get_logger().info("Received first synced RGB+depth frames (sim).")
 
     # ---------------------------------------------------------------------- #
     # Service handler                                                          #
@@ -180,14 +214,9 @@ class SAM3ObjectPoseNode(Node):
         bgr   = self.bridge.imgmsg_to_cv2(self.latest_rgb,   desired_encoding='bgr8')
         depth = self.bridge.imgmsg_to_cv2(self.latest_depth, desired_encoding='passthrough')
 
-        # pil_img = PILImage.fromarray(bgr[:, :, ::-1].copy().astype(np.uint8))
-        rgb_image = bgr[:, :, ::-1].copy().astype(np.uint8)  # numpy RGB array
+        rgb_image = bgr[:, :, ::-1].copy().astype(np.uint8)
 
-
-        # SAM3 segmentation ----------------------------------------------------
-
-        # SEND A REQUEST TO THE SAM3 SERVER
-
+        # SAM3 segmentation via remote server ----------------------------------
         self.sock.send_json({"shape": rgb_image.shape, "dtype": str(rgb_image.dtype), "prompt": prompt_text}, zmq.SNDMORE)
         self.sock.send(rgb_image.tobytes())
 
@@ -242,13 +271,25 @@ class SAM3ObjectPoseNode(Node):
         """Back-projects mask pixels to camera-frame 3D points (metres)."""
         ys, xs = np.where(mask)
         if xs.size == 0:
+            self.get_logger().warn("Mask has zero pixels.")
             return None
 
         z_vals = depth[ys, xs].astype(np.float32)
         valid  = (z_vals > self.min_z) & (z_vals < self.max_z)
+
+        n_mask = xs.size
+        n_valid = int(valid.sum())
+        n_zero = int((z_vals == 0).sum())
+        if n_mask > 0:
+            z_min, z_max = float(z_vals.min()), float(z_vals.max())
+            self.get_logger().info(
+                f"Depth stats: mask_px={n_mask}, valid={n_valid}, zero={n_zero}, "
+                f"range=[{z_min:.0f}, {z_max:.0f}]mm, filter=[{self.min_z}, {self.max_z}]mm"
+            )
+
         xs, ys, z_vals = xs[valid], ys[valid], z_vals[valid]
 
-        if int(valid.sum()) < self.min_pts:
+        if n_valid < self.min_pts:
             return None
 
         X = ((xs - self.cx) * z_vals) / self.fx

@@ -63,3 +63,6 @@ log/
 
 # Audio recordings from microphone tests
 **/recordings/
+
+# Scan logs
+**/logs/
