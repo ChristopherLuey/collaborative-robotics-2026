@@ -83,9 +83,11 @@ class ApproachNode(Node):
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         yaw = math.atan2(siny_cosp, cosy_cosp)
+
         self.current_x = float(p.x)
         self.current_y = float(p.y)
-        self.current_th = float(yaw)
+        self.current_th = float(yaw) - np.pi/2
+        #self.get_logger().info(f"Odometry update: x={self.current_x:.3f}, y={self.current_y:.3f}, th={self.current_th:.3f} rad")
         self.odom_seen = True
 
     # goal_reached (log only on transition)
@@ -117,6 +119,8 @@ class ApproachNode(Node):
         # Publish target (convert world -> Pose2D expected by phoenix6_base_node)
         self._publish_target_from_world(world_x, world_y, world_th)
 
+        self.get_logger().info(f"Observed world position: x={world_x:.3f}, y={world_y:.3f}, th={world_th:.3f} rad")
+        
         # Return empty response (non-blocking)
         return response
 

@@ -55,7 +55,8 @@ try:
 except ImportError as e:
     HAS_PHOENIX6 = False
     IMPORT_ERROR = str(e)
-
+import math
+from tf_transformations import quaternion_multiply, quaternion_from_euler
 
 class Phoenix6BaseNode(Node):
     """
@@ -184,9 +185,6 @@ class Phoenix6BaseNode(Node):
             self.target_pose.y = msg.y
             self.target_pose.theta = msg.theta
             self.last_goal_reached = False
-            self.get_logger().info(
-                f'Target pose: ({self.target_pose.x:.3f}, {self.target_pose.y:.3f}, θ={self.target_pose.theta:.2f}) [odom]'
-            )
 
     def normalize_angle(self, angle):
         """Normalize angle to [-pi, pi]."""
@@ -223,7 +221,6 @@ class Phoenix6BaseNode(Node):
 
         # Final orientation error
         orientation_error = self.normalize_angle(tth - th)
-
         # Check if we've reached the goal
         at_position = distance < self.position_tolerance
         at_orientation = abs(orientation_error) < self.orientation_tolerance
@@ -233,7 +230,6 @@ class Phoenix6BaseNode(Node):
                 goal_msg = Bool()
                 goal_msg.data = True
                 self.goal_reached_pub.publish(goal_msg)
-                self.get_logger().info(f'Goal reached! Final: dist={distance:.3f}m, ori_err={math.degrees(orientation_error):.1f}°')
                 self.last_goal_reached = True
             self.position_control_mode = False
             self.target_pose = None
@@ -319,17 +315,24 @@ class Phoenix6BaseNode(Node):
         odom.pose.pose.position.y = y
         odom.pose.pose.position.z = 0.0
 
-        # Convert yaw to quaternion
-        cy = math.cos(th * 0.5)
-        sy = math.sin(th * 0.5)
-        odom.pose.pose.orientation.x = 0.0
-        odom.pose.pose.orientation.y = 0.0
-        odom.pose.pose.orientation.z = sy
-        odom.pose.pose.orientation.w = cy
-
         odom.twist.twist.linear.x = vx
         odom.twist.twist.linear.y = vy
         odom.twist.twist.angular.z = vth
+
+        # we rotate by -90 to match sim conventions
+        # Original vehicle yaw
+        q_yaw = quaternion_from_euler(0, 0, th)  # (roll=0, pitch=0, yaw=th)
+
+        # Rotation of 90 deg about Z
+        q_rot = quaternion_from_euler(0, 0, math.pi/2)
+
+        # Combined rotation: q_rot * q_yaw
+        q_final = quaternion_multiply(q_rot, q_yaw)
+
+        odom.pose.pose.orientation.x = q_final[0]
+        odom.pose.pose.orientation.y = q_final[1]
+        odom.pose.pose.orientation.z = q_final[2]
+        odom.pose.pose.orientation.w = q_final[3]
 
         self.odom_pub.publish(odom)
 
@@ -341,10 +344,10 @@ class Phoenix6BaseNode(Node):
         t.transform.translation.x = x
         t.transform.translation.y = y
         t.transform.translation.z = 0.0
-        t.transform.rotation.x = 0.0
-        t.transform.rotation.y = 0.0
-        t.transform.rotation.z = sy
-        t.transform.rotation.w = cy
+        t.transform.rotation.x = odom.pose.pose.orientation.x 
+        t.transform.rotation.y = odom.pose.pose.orientation.y 
+        t.transform.rotation.z = odom.pose.pose.orientation.z 
+        t.transform.rotation.w = odom.pose.pose.orientation.w 
 
         self.tf_broadcaster.sendTransform(t)
 

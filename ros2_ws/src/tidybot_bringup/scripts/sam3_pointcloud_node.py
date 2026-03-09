@@ -135,7 +135,54 @@ class SAM3ObjectPoseNode(Node):
 
         # publish for debug
 
-        self.create_publisher(PointCloud2)
+        self.pc_pub = self.create_publisher(PointCloud2, "/sam3/points", 10)
+
+        self.debug_pub_timer = self.create_timer(1.0, self.publish_debug_pc)
+
+    def publish_debug_pc(self):
+
+        prompt_text = "banana"
+
+        if None in (self.fx, self.fy, self.cx, self.cy):
+            return None
+
+        if self.latest_rgb is None or self.latest_depth is None:
+            return None
+
+        # Decode ----------------------------------------------------------------
+        bgr   = self.bridge.imgmsg_to_cv2(self.latest_rgb,   desired_encoding='bgr8')
+        depth = self.bridge.imgmsg_to_cv2(self.latest_depth, desired_encoding='passthrough')
+
+        # pil_img = PILImage.fromarray(bgr[:, :, ::-1].copy().astype(np.uint8))
+        rgb_image = bgr[:, :, ::-1].copy().astype(np.uint8)  # numpy RGB array
+
+
+        # SAM3 segmentation ----------------------------------------------------
+
+        # SEND A REQUEST TO THE SAM3 SERVER
+
+        self.sock.send_json({"shape": rgb_image.shape, "dtype": str(rgb_image.dtype), "prompt": prompt_text}, zmq.SNDMORE)
+        self.sock.send(rgb_image.tobytes())
+
+        meta = self.sock.recv_json()
+        data = self.sock.recv()
+        mask_np = np.frombuffer(data, dtype=meta["dtype"]).reshape(meta["shape"])
+        # Back-project to camera-frame points ----------------------------------
+        points_cam = self._mask_to_points(mask_np, depth)
+        if points_cam is None:
+            return None
+
+        # Transform to base frame ----------------------------------------------
+    
+        tf_msg = self.tf_buffer.lookup_transform(
+            self.base_frame,
+            self.camera_frame,
+            self.latest_rgb.header.stamp,
+        )
+        points_base = _transform_pointcloud(points_cam, tf_msg)
+        cloud_msg = create_pointcloud2(points_base, frame_id=self.base_frame)
+        
+        self.pc_pub.publish(cloud_msg)
 
     def setup_zmq_connection(self):
         self.ctx = zmq.Context()
@@ -253,6 +300,7 @@ class SAM3ObjectPoseNode(Node):
             f"Detected '{prompt_text}' with {len(points_base)} points."
         )
         self.get_logger().info(response.message)
+
         return response
 
     # ---------------------------------------------------------------------- #
