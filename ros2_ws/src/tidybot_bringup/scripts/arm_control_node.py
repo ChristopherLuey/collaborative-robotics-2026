@@ -191,9 +191,6 @@ class ArmPlanner(Node):
 
         new = rotate_pose_about_z(req.target_pose, -90)
         req.target_pose = new
-        self.get_logger().info(f"Transformed pose: {new}")
-        self.get_logger().info(f"Transformed pose: {req.target_pose}")
-        #-0.10, -0.35, 0.55
         req.use_orientation = True
         req.execute = True
         req.duration = float(duration)

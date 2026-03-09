@@ -86,6 +86,13 @@ class StateManager(Node):
         self.timer_cb = self.create_timer(0.1, self._timer_cb)
 
         self.vision_future = None
+
+        # Change-detection for log deduplication
+        self._prev_request = None
+        self._prev_inner_state = None
+        self._prev_wait_reason = None
+        self._prev_base_ready = None
+        self._prev_arms_ready = None
         
         # Publisher
         self.pan_tilt_pub = self.create_publisher(
@@ -96,7 +103,11 @@ class StateManager(Node):
         """
         This is called at 10hz, and is where we will check if we have a new request, and if so, execute it.
         """
-        self.get_logger().info(f'Current request: {self.current_request}, inner state: {self.inner_state}')
+        if self.current_request != self._prev_request or self.inner_state != self._prev_inner_state:
+            self.get_logger().info(f'Current request: {self.current_request}, inner state: {self.inner_state}')
+            self._prev_request = self.current_request
+            self._prev_inner_state = self.inner_state
+            self._prev_wait_reason = None  # reset wait reason on state change
         if self.current_request == "":
             return
         
@@ -111,13 +122,16 @@ class StateManager(Node):
                     des_base = self._find_base_coordinates(self.object_pose, self.object_grasp_thresh)
                     self.move_base(des_base) #get us started moving!
                 else:
-                    #self.get_logger().error('Could not find object in search.')
-                    self.get_logger().info('Waiting on vision...')
+                    if self._prev_wait_reason != 'vision':
+                        self.get_logger().info('Waiting on vision...')
+                        self._prev_wait_reason = 'vision'
                     return
                 
             if self.inner_state == "Moving to object":
                 if not self.base_ready:
-                    self.get_logger().info('Waiting for base to be ready...')
+                    if self._prev_wait_reason != 'base_moving_to_object':
+                        self.get_logger().info('Waiting for base to be ready...')
+                        self._prev_wait_reason = 'base_moving_to_object'
                     return
                 else: #this means we arrived!
                     #self.get_object_pose(self.object, allow_search=False) #get an updated pose for grasping, since we should be closer now.
@@ -127,7 +141,9 @@ class StateManager(Node):
 
             if self.inner_state == "Grasping object":
                 if not self.arms_ready:
-                    self.get_logger().info('Waiting for arms to be ready...')
+                    if self._prev_wait_reason != 'arms_grasping':
+                        self.get_logger().info('Waiting for arms to be ready...')
+                        self._prev_wait_reason = 'arms_grasping'
                     return
                 else: #this means we should have the object grasped!
                     self.get_logger().info('Transitioning to searching for target.')
@@ -150,7 +166,9 @@ class StateManager(Node):
                     return
             if self.inner_state == "Moving to target":
                 if not self.base_ready:
-                    self.get_logger().info('Waiting for base to be ready...')
+                    if self._prev_wait_reason != 'base_moving_to_target':
+                        self.get_logger().info('Waiting for base to be ready...')
+                        self._prev_wait_reason = 'base_moving_to_target'
                     return
                 else: #this means we arrived!
                     #self.get_object_pose(self.target, allow_search=False) #get an updated pose for releasing, since we should be closer now.
@@ -158,7 +176,9 @@ class StateManager(Node):
                     self.inner_state = "Releasing object"
             if self.inner_state == "Releasing object":
                 if not self.arms_ready:
-                    self.get_logger().info('Waiting for arms to be ready...')
+                    if self._prev_wait_reason != 'arms_releasing':
+                        self.get_logger().info('Waiting for arms to be ready...')
+                        self._prev_wait_reason = 'arms_releasing'
                     return
                 else: #this means we should have the object released!
                     self.get_logger().info('Returning to home position.')
@@ -166,7 +186,9 @@ class StateManager(Node):
                     self.inner_state = "Returning to Home"
             if self.inner_state == "Returning to Home":
                 if not self.base_ready:
-                    self.get_logger().info('Waiting for base to be ready...')
+                    if self._prev_wait_reason != 'base_returning':
+                        self.get_logger().info('Waiting for base to be ready...')
+                        self._prev_wait_reason = 'base_returning'
                     return
                 else: #this means we are back home and done with the task!
                     self.get_logger().info('Arrived at home, waiting for next command!')
@@ -202,17 +224,23 @@ class StateManager(Node):
 
     def _base_status_cb(self, msg: Bool):
         """Called whenever a message is published to /base/goal_reached."""
-        if msg.data:
-            self.get_logger().info('Base has reached its goal.')            
-        else:
-            self.get_logger().info('Base is moving towards its goal.')
+        if msg.data != self._prev_base_ready:
+            if msg.data:
+                self.get_logger().info('Base has reached its goal.')
+            else:
+                self.get_logger().info('Base is moving towards its goal.')
+            self._prev_base_ready = msg.data
 
         self.base_ready = msg.data
 
     def _arm_status_cb(self, msg: Bool):
         """Called whenever a message is published to /arm_queue_full."""
-        if msg.data:
-            self.get_logger().info('Arm command queue is full.')
+        if msg.data != self._prev_arms_ready:
+            if msg.data:
+                self.get_logger().info('Arm command queue is full.')
+            else:
+                self.get_logger().info('Arm command queue is clear.')
+            self._prev_arms_ready = msg.data
 
         self.arms_ready = not msg.data
 
@@ -238,8 +266,6 @@ class StateManager(Node):
         self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.3])) #look forward before picking up
         object_pose = self.get_object_pose(object_label, allow_search=False)
         if object_pose is None:
-            #self.get_logger().error(f'Could not find pose for object: {object_label}')
-            self.get_logger().info("waiting on vision")
             return False
         self.get_logger().info(f'Found object pose at {object_pose}, attempting grasp...')
         result = self.grasp_and_hold(arm_name = "right", grasp_pose=object_pose, end_pose=self.rest_pose)
@@ -334,8 +360,6 @@ class StateManager(Node):
         if the object cannot be found, returns None
         """
 
-        self.get_logger().info(f'Getting pose for object: {label}')
-
         if self.vision_future is None:
             # prepare service request:
             request = GetObjectPose.Request()
@@ -412,7 +436,6 @@ class StateManager(Node):
         """
         Get the current pose of the robot.
         """
-        self.get_logger().info('Getting current robot pose')
         current_pose_2d = Pose2D()
         current_pose_2d.x = self.current_pose.position.x
         current_pose_2d.y = self.current_pose.position.y
