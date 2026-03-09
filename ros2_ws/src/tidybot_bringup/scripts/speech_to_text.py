@@ -62,6 +62,7 @@ class SpeechToTextNode(Node):
 
     to activate the microphone node:
     ros2 run tidybot_control microphone_node --ros-args -p device_index:=4 -p sample_rate:=48000
+    ros2 run tidybot_control microphone_node --ros-args -p device_index:=5 -p sample_rate:=16000
 
     tidybot mic may be 16000 sample rate, 48000 is mine
     """

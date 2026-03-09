@@ -74,7 +74,14 @@ class VoiceInterface:
                 "Install: pip install pyaudio (may need: apt install portaudio19-dev)"
             )
 
-        self.client = genai_live.Client(api_key=config.GOOGLE_API_KEY)
+        if config.USE_VERTEX_AI:
+            self.client = genai_live.Client(
+                vertexai=True,
+                project=config.VERTEX_PROJECT,
+                location=config.VERTEX_LOCATION,
+            )
+        else:
+            self.client = genai_live.Client(api_key=config.GOOGLE_API_KEY)
         self.audio = pyaudio.PyAudio()
 
     async def run(self):

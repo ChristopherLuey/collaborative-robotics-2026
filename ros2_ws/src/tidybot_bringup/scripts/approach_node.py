@@ -60,6 +60,7 @@ class ApproachNode(Node):
         self.current_y = 0.0
         self.current_th = 0.0
         self.odom_seen = False
+        self._prev_goal_reached = False
 
         # publisher to base controller
         self.target_pub = self.create_publisher(Pose2D, self.publish_target_topic, 10)
@@ -87,10 +88,11 @@ class ApproachNode(Node):
         self.current_th = float(yaw) - math.pi/2
         self.odom_seen = True
 
-    # goal_reached (log only)
+    # goal_reached (log only on transition)
     def _goal_reached_cb(self, msg: Bool):
-        if msg.data:
+        if msg.data and not self._prev_goal_reached:
             self.get_logger().info("Goal reached (received from /base/goal_reached).")
+        self._prev_goal_reached = msg.data
 
     # service callback (non-blocking)
     def _srv_cb(self, request, response):

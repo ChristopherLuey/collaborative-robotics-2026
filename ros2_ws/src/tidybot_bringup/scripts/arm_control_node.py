@@ -52,7 +52,6 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Pose, PoseStamped
 from tidybot_msgs.srv import PlanToTarget, RequestArmMotion
 from sensor_msgs.msg import JointState
-from interbotix_xs_msgs.msg import JointGroupCommand
 from std_msgs.msg import Float64MultiArray, String, Empty, Bool
 from tf2_ros import TransformListener, Buffer
 
@@ -105,6 +104,9 @@ class ArmPlanner(Node):
         self.active_future = None
         self.action_queue = []
         self.current_state = "idle"
+        self._prev_state = None
+        self._prev_queue_len = None
+        self._prev_arms_moving = set()
         self.gripper_action_start = self.get_clock().now()
 
         self.tf_buffer   = Buffer()
@@ -122,22 +124,25 @@ class ArmPlanner(Node):
     # ---------------- Planner service (async, non-blocking) ----------------
 
     def _check_job(self):
-
-        self.get_logger().info("checking for job")
-        self.get_logger().info("current state: " + self.current_state)
-        self.get_logger().info("current action queue: " + str(self.action_queue))
-        self.get_logger().info("active future: " + str(self.active_future.done()) if self.active_future else "None")
-
         # check if arm is currently moving, if it is we just continue:
         now = self.get_clock().now()
+        arms_moving = set()
         for arm in ['right', 'left']:
             if (now - self.last_cmd_publish[arm]).nanoseconds < 500_000_000:  # 0.5 second threshold for "still moving"
-                self.get_logger().info(f'{arm.capitalize()} arm is still moving...')
+                arms_moving.add(arm)
 
-                bool_msg = Bool()
-                bool_msg.data = True
-                self.queue_full_pub.publish(bool_msg)
-                return
+        if arms_moving:
+            if arms_moving != self._prev_arms_moving:
+                for arm in arms_moving:
+                    self.get_logger().info(f'{arm.capitalize()} arm is still moving...')
+            self._prev_arms_moving = arms_moving
+            bool_msg = Bool()
+            bool_msg.data = True
+            self.queue_full_pub.publish(bool_msg)
+            return
+
+        if self._prev_arms_moving:
+            self._prev_arms_moving = set()
 
         if self.active_future is not None and self.active_future.done():
             result = self.active_future.result()
@@ -160,12 +165,15 @@ class ArmPlanner(Node):
             if next_action == "open":
                 self._set_gripper(self.current_request.arm_name, GRIPPER_OPEN)
 
-        bool_msg = Bool()
-        if self.current_state is not "idle":
-            bool_msg.data = True
-        else:
-            bool_msg.data = False
+        # Log only when state or queue length changes
+        queue_len = len(self.action_queue)
+        if self.current_state != self._prev_state or queue_len != self._prev_queue_len:
+            self.get_logger().info(f'State: {self.current_state}, queue: {self.action_queue}')
+            self._prev_state = self.current_state
+            self._prev_queue_len = queue_len
 
+        bool_msg = Bool()
+        bool_msg.data = self.current_state != "idle"
         self.queue_full_pub.publish(bool_msg)
             
 
