@@ -241,10 +241,10 @@ class ArmPlanner(Node):
 
         # now queue up motion.
         if motion_type == "grab":
-            self.action_queue.extend(["reach", "close"]) 
+            self.action_queue.extend(["open", "reach", "close"]) 
         
         elif motion_type == "release":
-            self.action_queue.extend(["reach", "open"])
+            self.action_queue.extend(["close", "reach", "open"])
 
         elif motion_type == "move":
             self.action_queue.extend(["reach"])
@@ -339,6 +339,6 @@ def rotate_pose_about_z(pose: Pose, angle_deg: float) -> Pose:
 
     return rotated_pose
 
-    
+
 if __name__ == '__main__':
     main()

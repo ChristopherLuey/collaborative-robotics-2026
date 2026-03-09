@@ -45,6 +45,11 @@ from tf2_ros import TransformListener, Buffer
 
 from tidybot_msgs.srv import GetObjectPose
 import zmq
+from sensor_msgs.msg import PointCloud2, PointField
+
+
+import std_msgs.msg
+import struct
 
 REMOTE_IP = "100.77.113.90"
 PORT = 5556
@@ -127,6 +132,10 @@ class SAM3ObjectPoseNode(Node):
         )
 
         self.setup_zmq_connection()
+
+        # publish for debug
+
+        self.create_publisher(PointCloud2)
 
     def setup_zmq_connection(self):
         self.ctx = zmq.Context()
@@ -351,6 +360,32 @@ def rotate_pose_about_z(pose: Pose, angle_deg: float) -> Pose:
 
     return rotated_pose
 
+def create_pointcloud2(points, frame_id="map"):
+    """
+    points: Nx3 numpy array
+    """
+    msg = PointCloud2()
+    msg.header.stamp = rclpy.clock.Clock().now().to_msg()
+    msg.header.frame_id = frame_id
+    msg.height = 1
+    msg.width = points.shape[0]
+
+    msg.fields = [
+        PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+        PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+        PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+    ]
+    msg.is_bigendian = False
+    msg.point_step = 12  # 3*4 bytes
+    msg.row_step = msg.point_step * points.shape[0]
+    msg.is_dense = True
+
+    # pack points into bytes
+    buffer = []
+    for p in points:
+        buffer.append(struct.pack('fff', *p))
+    msg.data = b"".join(buffer)
+    return msg
 
 # --------------------------------------------------------------------------- #
 # Entry point                                                                  #

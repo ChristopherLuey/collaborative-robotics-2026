@@ -32,7 +32,7 @@ class StateManager(Node):
         self.object_pose = None
         self.target_pose = None
         self.base_home = None
-        self.object_grasp_thresh = 0.5 # how close we need to be to an object to attempt a grasp
+        self.object_grasp_thresh = 0.35 # how close we need to be to an object to attempt a grasp
         self.object_release_thresh = 0.5 # how close we need to be to a target location to attempt a release
         self.get_logger().info('Transcription subscriber node started.')
 
@@ -131,10 +131,7 @@ class StateManager(Node):
                     return
                 else: #this means we should have the object grasped!
                     self.get_logger().info('Transitioning to searching for target.')
-                    #self.inner_state = "Searching for target"
-                    # TODO REMOVEEEEEE
-                    self.inner_state = "idle"
-                    self.current_request = "idle" #transition to idle state, waiting for next request
+                    self.inner_state = "Searching for target"
 
 
 
@@ -235,8 +232,9 @@ class StateManager(Node):
         """
         This is task #1
         """
-        self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.3])) #look forward before picking up
+        self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.5])) #look forward before picking up
         object_pose = self.get_object_pose(object_label, allow_search=False)
+        
         if object_pose is None:
             #self.get_logger().error(f'Could not find pose for object: {object_label}')
             self.get_logger().info("waiting on vision")
@@ -351,6 +349,11 @@ class StateManager(Node):
         self.vision_future = None
         if response.success:
             self.get_logger().info(f'Found pose for object: {label}')
+            response.pose.pose.orientation.x = 0.0 # we don't get orientation from vision, so we just set it to a default value for now. This will need to be updated for task 3, where orientation matters.
+            response.pose.pose.orientation.y = 0.7071 # we don't get orientation from vision, so we just set it to a default value for now. This will need to be updated for task 3, where orientation matters.
+            response.pose.pose.orientation.z = 0.0 # we don't get orientation from vision, so we just set it to a default value for now. This will need to be updated for task 3, where orientation matters.
+            response.pose.pose.orientation.w = 0.7071 # we don't get orientation from vision, so we just set it to a default value for now. This will need to be updated for task 3, where orientation matters.
+            
             return response.pose.pose
         
         else:
