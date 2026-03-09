@@ -112,7 +112,6 @@ class ArmPlanner(Node):
         self.tf_buffer   = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-
     # ---------------- subscribers
     # we want these literally just to check when arm is done moving
     def _right_joint_state_cb(self, msg: Float64MultiArray):
@@ -127,6 +126,7 @@ class ArmPlanner(Node):
         # check if arm is currently moving, if it is we just continue:
         now = self.get_clock().now()
         arms_moving = set()
+        #self.get_logger().info(f'Current action queue: {self.action_queue}')
         for arm in ['right', 'left']:
             if (now - self.last_cmd_publish[arm]).nanoseconds < 500_000_000:  # 0.5 second threshold for "still moving"
                 arms_moving.add(arm)
@@ -178,22 +178,22 @@ class ArmPlanner(Node):
             
 
     def _start_plan_request(self, arm_name: str, pose: Pose, duration: float = 3.0, use_orientation: bool = True):
+        """
+        pose is in world frame (e.g. from camera), we will transform it to base_link frame for the planner
+        """
+
         req = PlanToTarget.Request()
         req.arm_name = arm_name
+        req.target_pose = transform_pose(pose, self.tf_buffer.lookup_transform("base_link", "odom", rclpy.time.Time()))
         
-        tf_msg = self.tf_buffer.lookup_transform(
-            "base_link",
-            "odom",
-            rclpy.time.Time()
-        )
-
-        req.target_pose = transform_pose(pose, tf_msg)
+        self.get_logger().info(f'Target pose: {req.target_pose}')
 
         self.get_logger().info(
             f'IK request ({arm_name}): '
             f'odom=({pose.position.x:.3f}, {pose.position.y:.3f}, {pose.position.z:.3f}) '
             f'-> base_link=({req.target_pose.position.x:.3f}, {req.target_pose.position.y:.3f}, {req.target_pose.position.z:.3f})'
         )
+        
         req.use_orientation = True
         req.execute = True
         req.duration = float(duration)
@@ -220,6 +220,7 @@ class ArmPlanner(Node):
     def _request_arm_motion(self, request: RequestArmMotion.Request, response: RequestArmMotion.Response):
         self.get_logger().info(f'Received RequestArmMotion: arm={request.arm_name} motion={request.motion_type}')
         arm_name = request.arm_name
+
         if arm_name not in ['right', 'left']:
             response.success = False
             response.message = f'Invalid arm_name: {arm_name}'
@@ -251,6 +252,7 @@ class ArmPlanner(Node):
 
         response.success = True
         response.message = f'Sent execution {motion_type} motion for {arm_name} arm'
+        #self.get_logger().info(f'Current action queue: {self.action_queue}')
         return response
     
 def transform_pose(pose: Pose, tf: TransformStamped) -> Pose:

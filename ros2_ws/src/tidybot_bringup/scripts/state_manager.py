@@ -28,7 +28,7 @@ class StateManager(Node):
         self.current_request = ""
         self.inner_state = "" # this can be used to track progress within a task, e.g. "searching for object", "moving to object", "grasping object", etc.
         self.object = "" # this can be used to track the current object of interest, e.g. "bottle", "door", etc.
-        self.target = "basket" #the thing we are trying to place object in, for task 2
+        self.target = "blue bin" #the thing we are trying to place object in, for task 2
         self.object_pose = None
         self.target_pose = None
         self.base_home = None
@@ -65,7 +65,7 @@ class StateManager(Node):
                                     self._base_status_cb,  # Callback
                                     10                   # QoS depth
                                 )
-        self.base_ready = False
+        self.base_ready = True
         
 
         self.arms_moving_sub = self.create_subscription(
@@ -74,7 +74,7 @@ class StateManager(Node):
                                     self._arm_status_cb,  # Callback
                                     10                   # QoS depth
                                 )
-        self.arms_ready = False
+        self.arms_ready = True
 
         self.odom_sub = self.create_subscription(
                                     Odometry,              # Message type
@@ -103,6 +103,8 @@ class StateManager(Node):
         """
         This is called at 10hz, and is where we will check if we have a new request, and if so, execute it.
         """
+
+
         if self.current_request != self._prev_request or self.inner_state != self._prev_inner_state:
             self.get_logger().info(f'Current request: {self.current_request}, inner state: {self.inner_state}')
             self._prev_request = self.current_request
@@ -110,7 +112,7 @@ class StateManager(Node):
             self._prev_wait_reason = None  # reset wait reason on state change
         if self.current_request == "":
             return
-        
+        self.get_logger().info(self.inner_state)
         if self.current_request == "Task2":
 
             if self.inner_state == "far search":
@@ -128,6 +130,7 @@ class StateManager(Node):
                     return
                 
             if self.inner_state == "Moving to object":
+                self.get_logger().info('Moving to object...')
                 if not self.base_ready:
                     if self._prev_wait_reason != 'base_moving_to_object':
                         self.get_logger().info('Waiting for base to be ready...')
@@ -135,9 +138,12 @@ class StateManager(Node):
                     return
                 else: #this means we arrived!
                     #self.get_object_pose(self.object, allow_search=False) #get an updated pose for grasping, since we should be closer now.
+                    self.get_logger().info('LOOK AT ME')
                     success = self.pickup_object(self.object)
                     if success:
                         self.inner_state = "Grasping object"
+                    else:
+                        return
 
             if self.inner_state == "Grasping object":
                 if not self.arms_ready:
@@ -149,11 +155,8 @@ class StateManager(Node):
                     self.get_logger().info('Transitioning to searching for target.')
                     self.inner_state = "Searching for target"
 
-
-
-
             if self.inner_state == "Searching for target":
-                self.target_pose = self.get_object_pose(self.target, allow_search=True) #find basket pose
+                self.target_pose = self.get_object_pose(self.target) #find basket pose
                 if self.target_pose is not None:
                     des_base = self._find_base_coordinates(self.target_pose, self.object_release_thresh)
                     self.move_base(des_base) #get us started moving!
@@ -161,6 +164,7 @@ class StateManager(Node):
                 else:
                     self.get_logger().error('Could not find target in search.')
                     return
+                
             if self.inner_state == "Moving to target":
                 if not self.base_ready:
                     if self._prev_wait_reason != 'base_moving_to_target':
@@ -169,8 +173,11 @@ class StateManager(Node):
                     return
                 else: #this means we arrived!
                     #self.get_object_pose(self.target, allow_search=False) #get an updated pose for releasing, since we should be closer now.
-                    self.stow_object(self.object, self.target)
+                    self.target_pose.position.z += 0.3 #add a little height to the release pose to make it easier to drop in
+                    end_pose = self.get_rest_pose()
+                    self.release_and_hold(arm_name = "right", release_pose=self.target_pose, end_pose=end_pose)
                     self.inner_state = "Releasing object"
+
             if self.inner_state == "Releasing object":
                 if not self.arms_ready:
                     if self._prev_wait_reason != 'arms_releasing':
@@ -263,39 +270,35 @@ class StateManager(Node):
         )
         self.inner_state = "far search"
 
+    def get_rest_pose(self):
+        end_pose = Pose()
+        end_pose.position.x = self.current_pose.position.x
+        end_pose.position.y = self.current_pose.position.y
+        end_pose.position.x += 0.2
+        end_pose.position.y += 0.0
+        end_pose.position.z = 0.5
+        end_pose.orientation.x = 0.0
+        end_pose.orientation.y = 0.0
+        end_pose.orientation.z = 0.0
+        end_pose.orientation.w = 1.0
+
+        return end_pose
+
     # ---------- high level functions ----------
     def pickup_object(self, object_label:str, max_attempts:int=3):
         """
         This is task #1
         """
         self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.5])) #look forward before picking up
-        object_pose = self.get_object_pose(object_label, allow_search=False)
+        object_pose = self.get_object_pose(object_label)
         
         if object_pose is None:
             return False
+        
         self.get_logger().info(f'Found object pose at {object_pose}, attempting grasp...')
-        result = self.grasp_and_hold(arm_name = "right", grasp_pose=object_pose, end_pose=self.rest_pose)
-        return result['success']
-        
-    def stow_object(self, object_label:str, target_label:str, max_attempts:int=3):
-        """
-        This is task #2
-        """
-        self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.0])) #look forward before picking up
-        object_pose = self.get_object_pose(object_label, allow_search=False)
-
-        if object_pose is None:
-            self.get_logger().error(f'Could not find pose for object: {object_label}')
-            return
-        
-        target_pose = self.get_object_pose(target_label, allow_search=False)
-
-        if target_pose is None:
-            self.get_logger().error(f'Could not find pose for target location: {target_label}')
-            return
-        
-        result = self.grasp_and_hold(arm_name = "right", grasp_pose=object_pose, end_pose=self.rest_pose)
-        result = self.release_and_hold(arm_name = "right", release_pose=target_pose, end_pose=target_pose)
+        end_pose = self.get_rest_pose()
+        self.grasp_and_hold(arm_name = "right", grasp_pose=object_pose, end_pose=end_pose)
+        return True
             
 
     def open_door(self, max_attempts:int=3):
@@ -331,7 +334,7 @@ class StateManager(Node):
             # we pull the door handle towards us by 15 cm:
             retracted_pose = door_handle_pose.copy() # TODO check frames fix this
             retracted_pose.position.x -= 0.15
-            result = self.grasp_and_hold(arm_name = "right", grasp_pose=door_handle_pose, end_pose=retracted_pose)
+            self.grasp_and_hold(arm_name = "right", grasp_pose=door_handle_pose, end_pose=retracted_pose)
 
             if not result["success"]:
                 self.get_logger().error('Failed to grasp door handle')
@@ -379,32 +382,15 @@ class StateManager(Node):
         
         response = self.vision_future.result()
         self.vision_future = None
+
         if response.success:
             self.get_logger().info(
                 f'Found pose for object: {label} at x={response.pose.pose.position.x:.3f}, '
                 f'y={response.pose.pose.position.y:.3f}, z={response.pose.pose.position.z:.3f} [odom]'
             )
-            response.pose.pose.orientation.x = 0.0 # we don't get orientation from vision, so we just set it to a default value for now. This will need to be updated for task 3, where orientation matters.
-            response.pose.pose.orientation.y = 0.7071 # we don't get orientation from vision, so we just set it to a default value for now. This will need to be updated for task 3, where orientation matters.
-            response.pose.pose.orientation.z = 0.0 # we don't get orientation from vision, so we just set it to a default value for now. This will need to be updated for task 3, where orientation matters.
-            response.pose.pose.orientation.w = 0.7071 # we don't get orientation from vision, so we just set it to a default value for now. This will need to be updated for task 3, where orientation matters.
-            
+
             return response.pose.pose
         
-        else:
-            # we try to look around, and see if object is in view.
-            if allow_search:
-                self.rotate_base(angle=np.pi/4)  # Rotate 0.5 radians to the right and try again
-                pose = self.get_object_pose(label, allow_search=False) 
-                if pose is not None:
-                    return pose
-                self.rotate_base(angle=-np.pi/2)  # Rotate 0.5 radians to the left and try again
-                pose = self.get_object_pose(label, allow_search=False)
-                if pose is not None:
-                    return pose
-                
-            self.get_logger().error(f'Could not find pose for object: {label}')
-
         return None
     
     def grasp_and_hold(self, arm_name:str, grasp_pose:Pose, end_pose:Pose):
@@ -412,16 +398,18 @@ class StateManager(Node):
         Execute a grasp at the given pose and return to the end pose.
         """
         self.get_logger().info(f'Executing grasp at {grasp_pose} and returning to {end_pose}')
-        response = self.arm_client.call(RequestArmMotion.Request(arm_name=arm_name, motion_type="grab", target_pose=grasp_pose))
-        response = self.arm_client.call(RequestArmMotion.Request(arm_name=arm_name, motion_type="reach", target_pose=end_pose))
+        response = self.arm_client.call_async(RequestArmMotion.Request(arm_name=arm_name, motion_type="grab", target_pose=grasp_pose))
+        response = self.arm_client.call_async(RequestArmMotion.Request(arm_name=arm_name, motion_type="move", target_pose=end_pose))
+        self.arms_ready = False
 
     def release_and_hold(self, arm_name:str, release_pose:Pose, end_pose:Pose):
         """
         Execute a release at the given pose and return to the end pose.
         """
         self.get_logger().info(f'Executing release at {release_pose} and returning to {end_pose}')
-        response = self.arm_client.call(RequestArmMotion.Request(arm_name=arm_name, motion_type="release", target_pose=release_pose))
-        response = self.arm_client.call(RequestArmMotion.Request(arm_name=arm_name, motion_type="reach", target_pose=end_pose))
+        response = self.arm_client.call_async(RequestArmMotion.Request(arm_name=arm_name, motion_type="release", target_pose=release_pose))
+        response = self.arm_client.call_async(RequestArmMotion.Request(arm_name=arm_name, motion_type="move", target_pose=end_pose))
+        self.arms_ready = False
 
     def move_base(self, target_pose:Pose2D):
         """
@@ -430,6 +418,7 @@ class StateManager(Node):
         self.get_logger().info(f'Moving base to {target_pose}')
         self.base_client.call_async(ApproachPose.Request(pose=target_pose, 
                                                    relative=False))
+        self.base_ready = False
         # Implement navigation logic here
 
     def rotate_base(self, angle:float):

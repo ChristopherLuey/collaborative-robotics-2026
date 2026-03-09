@@ -136,6 +136,7 @@ class SAM3ObjectPoseNode(Node):
         # publish for debug
 
         self.pc_pub = self.create_publisher(PointCloud2, "/sam3/points", 10)
+        self.pose_pub = self.create_publisher(PoseStamped, "/sam3/pose", 10)
 
         self.debug_pub_timer = self.create_timer(1.0, self.publish_debug_pc)
 
@@ -177,12 +178,26 @@ class SAM3ObjectPoseNode(Node):
         tf_msg = self.tf_buffer.lookup_transform(
             self.base_frame,
             self.camera_frame,
-            self.latest_rgb.header.stamp,
+            rclpy.time.Time()
         )
         points_base = _transform_pointcloud(points_cam, tf_msg)
         cloud_msg = create_pointcloud2(points_base, frame_id=self.base_frame)
         
         self.pc_pub.publish(cloud_msg)
+
+
+
+        pca = PCA(n_components=3)
+        pca.fit(points_base)
+        major_axis  = pca.components_[0]
+
+        centroid_base = points_base.mean(axis=0)
+
+        obj_pose = _compute_pose(centroid_base, major_axis, self.base_frame, self.get_clock().now().to_msg())
+
+
+        self.pose_pub.publish(obj_pose)
+
 
     def setup_zmq_connection(self):
         self.ctx = zmq.Context()
@@ -269,6 +284,7 @@ class SAM3ObjectPoseNode(Node):
                 self.latest_rgb.header.stamp,
             )
             points_base = _transform_pointcloud(points_cam, tf_msg)
+
         except Exception as e:
             response.success = False
             response.message = f"TF lookup failed: {e}"
@@ -289,8 +305,9 @@ class SAM3ObjectPoseNode(Node):
         stamp = self.get_clock().now().to_msg()
         response.success = True
         response.pose    = _compute_pose(centroid_base, major_axis, self.base_frame, stamp)
+        response.pose.pose.position.z += 0.06
+        response.pose.pose.position.x += 0.02
 
-        response.pose.pose = rotate_pose_about_z(response.pose.pose, 180)
         p = response.pose.pose.position
         self.get_logger().info(
             f"'{prompt_text}' final pose: ({p.x:.3f}, {p.y:.3f}, {p.z:.3f}) [{self.base_frame}]"
@@ -365,39 +382,12 @@ def _compute_pose(centroid: np.ndarray, axis: np.ndarray,
     pose.pose.orientation.y = float(quat[1])
     pose.pose.orientation.z = float(quat[2])
     pose.pose.orientation.w = float(quat[3])
+
+
+    rot_y = R.from_euler('xyz', [-np.pi/2.0, np.pi/2.0, 0]).as_matrix()
+    pose.pose = transform_pose(pose.pose, rot_y)
     return pose
 
-
-
-def rotate_pose_about_z(pose: Pose, angle_deg: float) -> Pose:
-    """
-    Rotate only the orientation of a ROS Pose about the Z axis by angle_deg degrees.
-    Position is preserved as-is (already in the correct frame from TF).
-    """
-    rotated_pose = Pose()
-
-    # --- Keep position unchanged (already correct from TF transform) ---
-    rotated_pose.position.x = pose.position.x
-    rotated_pose.position.y = pose.position.y
-    rotated_pose.position.z = pose.position.z
-
-    # --- Rotate orientation only ---
-    quat_orig = [
-        pose.orientation.x,
-        pose.orientation.y,
-        pose.orientation.z,
-        pose.orientation.w
-    ]
-    r_orig = R.from_quat(quat_orig)
-    r_z = R.from_euler('z', angle_deg, degrees=True)
-    r_new = r_z * r_orig
-    quat_new = r_new.as_quat()  # x, y, z, w
-    rotated_pose.orientation.x = quat_new[0]
-    rotated_pose.orientation.y = quat_new[1]
-    rotated_pose.orientation.z = quat_new[2]
-    rotated_pose.orientation.w = quat_new[3]
-
-    return rotated_pose
 
 def create_pointcloud2(points, frame_id="map"):
     """
@@ -425,6 +415,37 @@ def create_pointcloud2(points, frame_id="map"):
         buffer.append(struct.pack('fff', *p))
     msg.data = b"".join(buffer)
     return msg
+
+def transform_pose(pose: Pose, rot: np.ndarray) -> Pose:
+    """
+    Transform a Pose using a rotation matrix and translation vector.
+    
+    Args:
+        pose: geometry_msgs/Pose to transform
+        rot: 3x3 rotation matrix (numpy.ndarray)
+        t: 3-element translation vector (numpy.ndarray)
+
+    Returns:
+        transformed Pose
+    """
+
+    # Rotate orientation
+    q_pose = [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
+    r_pose = R.from_quat(q_pose)
+    r_transformed = r_pose * R.from_matrix(rot) # rotation applied first, then pose
+    q_transformed = r_transformed.as_quat()  # [x, y, z, w]
+
+    # Build transformed Pose
+    transformed_pose = Pose()
+    transformed_pose.position.x = pose.position.x
+    transformed_pose.position.y = pose.position.y
+    transformed_pose.position.z = pose.position.z
+    transformed_pose.orientation.x = q_transformed[0]
+    transformed_pose.orientation.y = q_transformed[1]
+    transformed_pose.orientation.z = q_transformed[2]
+    transformed_pose.orientation.w = q_transformed[3]
+
+    return transformed_pose
 
 # --------------------------------------------------------------------------- #
 # Entry point                                                                  #
