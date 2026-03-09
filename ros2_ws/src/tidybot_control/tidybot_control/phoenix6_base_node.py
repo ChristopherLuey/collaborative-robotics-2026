@@ -151,7 +151,9 @@ class Phoenix6BaseNode(Node):
         self.get_logger().info('Phoenix 6 base node ready')
         self.get_logger().info(f'  Max velocity: ({max_vx}, {max_vy}, {max_vth}) m/s, rad/s')
         self.get_logger().info(f'  Publish rate: {self.publish_rate} Hz')
-        self.get_logger().info("CHECKING")
+
+        # Change-detection for log deduplication
+        self._prev_control_phase = None
 
     def cmd_vel_callback(self, msg: Twist):
         """Handle velocity commands for the mobile base."""
@@ -183,7 +185,7 @@ class Phoenix6BaseNode(Node):
             self.target_pose.theta = msg.theta
             self.last_goal_reached = False
             self.get_logger().info(
-                f'Target: forward={msg.x:.2f}m -> world ({self.target_pose.x:.2f}, {self.target_pose.y:.2f})'
+                f'Target pose: ({self.target_pose.x:.3f}, {self.target_pose.y:.3f}, θ={self.target_pose.theta:.2f}) [odom]'
             )
 
     def normalize_angle(self, angle):
@@ -225,18 +227,13 @@ class Phoenix6BaseNode(Node):
         # Check if we've reached the goal
         at_position = distance < self.position_tolerance
         at_orientation = abs(orientation_error) < self.orientation_tolerance
-        self.get_logger().info(f'Position error: {distance:.3f} m, Heading error: {math.degrees(heading_error):.1f}°, Orientation error: {math.degrees(orientation_error):.1f}°')
-        self.get_logger().info("target_pose" + str(self.target_pose.x) + ", " + str(self.target_pose.y))
-        self.get_logger().info("current_pose" + str(x) + ", " + str(y) + ", " + str(th))
-        self.get_logger().info("angle_to_target" + str(angle_to_target) + ", actual_heading" + str(actual_heading))
-        
         if at_position and at_orientation:
             # Goal reached
             if not self.last_goal_reached:
                 goal_msg = Bool()
                 goal_msg.data = True
                 self.goal_reached_pub.publish(goal_msg)
-                self.get_logger().info('Goal reached!')
+                self.get_logger().info(f'Goal reached! Final: dist={distance:.3f}m, ori_err={math.degrees(orientation_error):.1f}°')
                 self.last_goal_reached = True
             self.position_control_mode = False
             self.target_pose = None
@@ -249,19 +246,30 @@ class Phoenix6BaseNode(Node):
                 vx = 0.0
                 vy = 0.0
                 vth = self.kp_angular * heading_error
-                self.get_logger().info("Rotating to face target...")
+                phase = "rotating"
             else:
                 # Drive toward target while correcting heading
                 vx = self.kp_linear * distance
                 vy = 0.0
                 vth = self.kp_angular * heading_error
-                self.get_logger().info("Moving toward target with a bit of rotation...")
+                phase = "driving"
         else:
             # Phase 2: At position, rotate to final orientation
             vx = 0.0
             vy = 0.0
             vth = self.kp_angular * orientation_error
-            self.get_logger().info("at position, now moving forward...")
+            phase = "final_rotate"
+
+        if phase != self._prev_control_phase:
+            labels = {
+                "rotating": "Rotating to face target...",
+                "driving": "Moving toward target...",
+                "final_rotate": "At position, rotating to final orientation...",
+            }
+            self.get_logger().info(
+                f'{labels[phase]} dist={distance:.3f}m, heading_err={math.degrees(heading_error):.1f}°, ori_err={math.degrees(orientation_error):.1f}°'
+            )
+            self._prev_control_phase = phase
 
         # Apply velocity limits
         vx = np.clip(vx, -self.max_linear_vel, self.max_linear_vel)
@@ -272,7 +280,6 @@ class Phoenix6BaseNode(Node):
 
     def control_callback(self):
         """Send velocity commands to the Vehicle (called at 10 Hz)."""
-        self.get_logger().info("control callback")
         with self.lock:
             # Get current pose from vehicle
             x, y, th = self.vehicle.x[0], self.vehicle.x[1], self.vehicle.x[2]

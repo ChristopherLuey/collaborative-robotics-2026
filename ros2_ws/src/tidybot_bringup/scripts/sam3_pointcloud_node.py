@@ -204,8 +204,6 @@ class SAM3ObjectPoseNode(Node):
         meta = self.sock.recv_json()
         data = self.sock.recv()
         mask_np = np.frombuffer(data, dtype=meta["dtype"]).reshape(meta["shape"])
-        self.get_logger().info(f"SAM3 mask shape: {mask_np.shape}")
-
         # Back-project to camera-frame points ----------------------------------
         points_cam = self._mask_to_points(mask_np, depth)
         if points_cam is None:
@@ -233,12 +231,8 @@ class SAM3ObjectPoseNode(Node):
         centroid_cam  = points_cam.mean(axis=0)
         centroid_base = points_base.mean(axis=0)
         self.get_logger().info(
-            f"[DEBUG] '{prompt_text}' centroid CAMERA frame: "
-            f"x={centroid_cam[0]:.4f}, y={centroid_cam[1]:.4f}, z={centroid_cam[2]:.4f}"
-        )
-        self.get_logger().info(
-            f"[DEBUG] '{prompt_text}' centroid BASE ({self.base_frame}) frame: "
-            f"x={centroid_base[0]:.4f}, y={centroid_base[1]:.4f}, z={centroid_base[2]:.4f}"
+            f"'{prompt_text}' centroid: cam=({centroid_cam[0]:.3f}, {centroid_cam[1]:.3f}, {centroid_cam[2]:.3f}) "
+            f"base=({centroid_base[0]:.3f}, {centroid_base[1]:.3f}, {centroid_base[2]:.3f}) [{self.base_frame}]"
         )
 
         pca = PCA(n_components=3)
@@ -250,12 +244,9 @@ class SAM3ObjectPoseNode(Node):
         response.pose    = _compute_pose(centroid_base, major_axis, self.base_frame, stamp)
 
         response.pose.pose = rotate_pose_about_z(response.pose.pose, 180)
-
+        p = response.pose.pose.position
         self.get_logger().info(
-            f"[DEBUG] '{prompt_text}' FINAL pose (after rotation): "
-            f"x={response.pose.pose.position.x:.4f}, "
-            f"y={response.pose.pose.position.y:.4f}, "
-            f"z={response.pose.pose.position.z:.4f}"
+            f"'{prompt_text}' final pose: ({p.x:.3f}, {p.y:.3f}, {p.z:.3f}) [{self.base_frame}]"
         )
 
         response.message = (

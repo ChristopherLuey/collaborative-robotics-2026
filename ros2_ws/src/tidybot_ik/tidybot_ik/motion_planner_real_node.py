@@ -496,7 +496,10 @@ class MotionPlannerRealNode(Node):
             return response
 
         mode = 'pos+orient' if request.use_orientation else 'pos-only'
-        self.get_logger().info(f'Planning for {arm_name} arm ({mode})...')
+        p = request.target_pose.position
+        self.get_logger().info(
+            f'Planning for {arm_name} arm ({mode}): target=({p.x:.3f}, {p.y:.3f}, {p.z:.3f}) [base_link]'
+        )
 
         # Get current joint positions as primary seed
         primary_seed = self.get_arm_joint_positions(arm_name)
