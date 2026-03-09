@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Bool
+from std_msgs.msg import Float64MultiArray, String, Bool
 from geometry_msgs.msg import Pose, Pose2D, PoseStamped
 from nav_msgs.msg import Odometry
 from tidybot_msgs.srv import GetObjectPose, RequestArmMotion, ApproachPose
@@ -32,8 +32,8 @@ class StateManager(Node):
         self.object_pose = None
         self.target_pose = None
         self.base_home = None
-        self.object_grasp_thresh = 0.65 # how close we need to be to an object to attempt a grasp
-        self.object_release_thresh = 0.8 # how close we need to be to a target location to attempt a release
+        self.object_grasp_thresh = 0.5 # how close we need to be to an object to attempt a grasp
+        self.object_release_thresh = 0.5 # how close we need to be to a target location to attempt a release
         self.get_logger().info('Transcription subscriber node started.')
 
         #rest pose for our arms to return to after a grasp/release action, can be updated later if needed
@@ -86,6 +86,11 @@ class StateManager(Node):
         self.timer_cb = self.create_timer(0.1, self._timer_cb)
 
         self.vision_future = None
+        
+        # Publisher
+        self.pan_tilt_pub = self.create_publisher(
+            Float64MultiArray, '/camera/pan_tilt_cmd', 10
+        )
     
     def _timer_cb(self):
         """
@@ -98,6 +103,8 @@ class StateManager(Node):
         if self.current_request == "Task2":
 
             if self.inner_state == "far search":
+
+                self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.0])) #look forward before picking up
                 self.object_pose = self.get_object_pose(self.object, allow_search=False)
                 if self.object_pose is not None:
                     self.inner_state = "Moving to object"
@@ -228,6 +235,7 @@ class StateManager(Node):
         """
         This is task #1
         """
+        self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.3])) #look forward before picking up
         object_pose = self.get_object_pose(object_label, allow_search=False)
         if object_pose is None:
             #self.get_logger().error(f'Could not find pose for object: {object_label}')
@@ -241,6 +249,7 @@ class StateManager(Node):
         """
         This is task #2
         """
+        self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.0])) #look forward before picking up
         object_pose = self.get_object_pose(object_label, allow_search=False)
 
         if object_pose is None:

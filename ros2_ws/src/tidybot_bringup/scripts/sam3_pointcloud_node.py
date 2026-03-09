@@ -232,7 +232,7 @@ class SAM3ObjectPoseNode(Node):
             f"x={centroid_base[0]:.4f}, y={centroid_base[1]:.4f}, z={centroid_base[2]:.4f}"
         )
 
-        pca         = PCA(n_components=3)
+        pca = PCA(n_components=3)
         pca.fit(points_base)
         major_axis  = pca.components_[0]
 
@@ -240,7 +240,7 @@ class SAM3ObjectPoseNode(Node):
         response.success = True
         response.pose    = _compute_pose(centroid_base, major_axis, self.base_frame, stamp)
 
-        response.pose.pose = rotate_pose_about_z(response.pose.pose, 270)
+        response.pose.pose = rotate_pose_about_z(response.pose.pose, 180)
 
         self.get_logger().info(
             f"[DEBUG] '{prompt_text}' FINAL pose (after rotation): "
