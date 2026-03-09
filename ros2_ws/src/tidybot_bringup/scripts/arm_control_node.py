@@ -49,10 +49,14 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 
-from geometry_msgs.msg import PoseStamped, Pose
+from geometry_msgs.msg import PoseStamped, Pose, PoseStamped
 from tidybot_msgs.srv import PlanToTarget, RequestArmMotion
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String, Empty, Bool
+from tf2_ros import TransformListener, Buffer
+
+from geometry_msgs.msg import Pose, Point, Quaternion, TransformStamped
+from scipy.spatial.transform import Rotation as rot_obj
 
 
 GRIPPER_OPEN = 0.0
@@ -104,6 +108,9 @@ class ArmPlanner(Node):
         self._prev_queue_len = None
         self._prev_arms_moving = set()
         self.gripper_action_start = self.get_clock().now()
+
+        self.tf_buffer   = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
 
     # ---------------- subscribers
@@ -173,8 +180,18 @@ class ArmPlanner(Node):
     def _start_plan_request(self, arm_name: str, pose: Pose, duration: float = 3.0, use_orientation: bool = True):
         req = PlanToTarget.Request()
         req.arm_name = arm_name
-        req.target_pose = pose
-        req.use_orientation = use_orientation
+        #req.target_pose = pose
+        # TODO: transform pose from "odom" to "base_link" frame if needed (planner expects base_link)
+        
+        tf_msg = self.tf_buffer.lookup_transform(
+            "base_link",
+            "odom",
+            rclpy.time.Time()
+        )
+        req.target_pose = transform_pose(pose, tf_msg)
+        self.get_logger().info(f"Transformed pose: {req.target_pose}")
+        #-0.10, -0.35, 0.55
+        req.use_orientation = True
         req.execute = True
         req.duration = float(duration)
         req.max_condition_number = 100.0
@@ -238,25 +255,39 @@ class ArmPlanner(Node):
         response.success = True
         response.message = f'Sent execution {motion_type} motion for {arm_name} arm'
         return response
+    
+def transform_pose(pose: Pose, tf: TransformStamped) -> Pose:
+    # Build transformation matrix from TransformStamped
+    t = tf.transform.translation
+    q = tf.transform.rotation
+    rot = rot_obj.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+    T = np.eye(4)
+    T[:3, :3] = rot
+    T[:3, 3] = [t.x, t.y, t.z]
 
-        if res is None:
-            self.get_logger().info(f'Motion planning failed...')
-            response.success = False
-            response.message = 'Planning service call failed'
-            return response
-        
-        # close or open the gripper if requested
-        if motion_type == "grab":
-            self.get_logger().info(f'Closing Gripper...')
-            self._set_gripper(arm_name, GRIPPER_CLOSED)
+    # Build homogeneous coordinate for the input pose
+    p = np.array([pose.position.x, pose.position.y, pose.position.z, 1.0])
 
-        elif motion_type == "release":
-            self.get_logger().info(f'Opening Gripper...')
-            self._set_gripper(arm_name, GRIPPER_OPEN)
-        
-        response.success = True
-        response.message = f'Executed {motion_type} motion for {arm_name} arm'
-        return response
+    # Apply transformation
+    p_transformed = T @ p
+
+    # Rotate the orientation
+    q_pose = [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
+    r_pose = rot_obj.from_quat(q_pose)
+    r_transformed = rot_obj.from_matrix(rot) * r_pose  # Apply rotation
+    q_transformed = r_transformed.as_quat()  # [x, y, z, w]
+
+    # Create new Pose
+    transformed_pose = Pose()
+    transformed_pose.position.x = p_transformed[0]
+    transformed_pose.position.y = p_transformed[1]
+    transformed_pose.position.z = p_transformed[2]
+    transformed_pose.orientation.x = q_transformed[0]
+    transformed_pose.orientation.y = q_transformed[1]
+    transformed_pose.orientation.z = q_transformed[2]
+    transformed_pose.orientation.w = q_transformed[3]
+
+    return transformed_pose
 
 def main(args=None):
     rclpy.init(args=args)

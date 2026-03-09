@@ -15,27 +15,21 @@
       markrgb="0.8 0.8 0.8" width="300" height="300"/>
     <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
   </asset>
+  <asset>
+  	<mesh name="banana_mesh" file="objects/banana.obj" scale="0.05 0.05 0.05"/>
+  </asset>
 
   <worldbody>
     <light pos="0 0 1.5" directional="true"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
-
-    <!-- Table in front of robot -->
-    <!-- Robot starts at theta=-pi/2, facing -X direction -->
-    <body name="table" pos="-0.5 0 0.15">
-      <geom name="tabletop" type="box" size="0.25 0.25 0.02" rgba="0.45 0.3 0.2 1" mass="10"/>
-      <geom name="table_leg1" type="cylinder" size="0.02 0.065" pos="0.2 0.2 -0.085" rgba="0.4 0.25 0.15 1"/>
-      <geom name="table_leg2" type="cylinder" size="0.02 0.065" pos="-0.2 0.2 -0.085" rgba="0.4 0.25 0.15 1"/>
-      <geom name="table_leg3" type="cylinder" size="0.02 0.065" pos="0.2 -0.2 -0.085" rgba="0.4 0.25 0.15 1"/>
-      <geom name="table_leg4" type="cylinder" size="0.02 0.065" pos="-0.2 -0.2 -0.085" rgba="0.4 0.25 0.15 1"/>
+    
+    <body name="banana" pos="1.4 0.0 0.14" euler="90 0 0">
+      <geom type="mesh"
+            mesh="banana_mesh"
+            rgba="1 1 0 1"
+            contype="0"
+            conaffinity="0"/>
     </body>
-
-    <!-- Banana on the table -->
-    <body name="banana" pos="-0.45 0 0.19">
-      <freejoint name="banana_joint"/>
-      <geom name="banana_body" type="capsule" size="0.02 0.06"
-            euler="0 90 20" rgba="1.0 0.9 0.2 1" mass="0.12"
-            friction="1.0 0.005 0.0001"/>
-    </body>
+    
   </worldbody>
 </mujoco>
