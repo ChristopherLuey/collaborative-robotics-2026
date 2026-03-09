@@ -66,6 +66,7 @@ def launch_setup(context, *args, **kwargs):
     use_microphone = LaunchConfiguration('use_microphone').perform(context) == 'true'
     use_sim_topics = LaunchConfiguration('use_sim_topics').perform(context) == 'true'
     load_configs = LaunchConfiguration('load_configs').perform(context) == 'true'
+    use_state_manager = LaunchConfiguration('use_state_manager').perform(context) == 'true'
 
     # Get project root for uv packages
     tidybot2_path = os.environ.get('TIDYBOT2_PATH', '/home/locobot/tidybot2')
@@ -289,6 +290,40 @@ def launch_setup(context, *args, **kwargs):
             }]
         ))
 
+    # State manager and its dependencies (SAM3 vision, arm control, approach)
+    if use_state_manager:
+        nodes.append(Node(
+            package='tidybot_bringup',
+            executable='sam3_pointcloud_node.py',
+            name='sam3_object_pose_node',
+            output='screen',
+            additional_env=hw_node_env,
+        ))
+
+        nodes.append(Node(
+            package='tidybot_bringup',
+            executable='arm_control_node.py',
+            name='arm_control_node',
+            output='screen',
+            additional_env=hw_node_env,
+        ))
+
+        nodes.append(Node(
+            package='tidybot_bringup',
+            executable='approach_node.py',
+            name='approach_node',
+            output='screen',
+            additional_env=hw_node_env,
+        ))
+
+        nodes.append(Node(
+            package='tidybot_bringup',
+            executable='state_manager.py',
+            name='state_manager',
+            output='screen',
+            additional_env=hw_node_env,
+        ))
+
     # Microphone recording node
     if use_microphone:
         nodes.append(Node(
@@ -344,6 +379,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_planner', default_value='true',
             description='Launch IK motion planner for real hardware'
+        ),
+        DeclareLaunchArgument(
+            'use_state_manager', default_value='false',
+            description='Launch state manager with SAM3 vision, arm control, and approach nodes'
         ),
         DeclareLaunchArgument(
             'use_sim_topics', default_value='true',

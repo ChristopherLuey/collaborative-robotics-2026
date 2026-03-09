@@ -45,6 +45,7 @@ install(PROGRAMS
   scripts/get_grasp_pose.py
   scripts/gemini_planner.py
   scripts/sam3_pointcloud_node.py
+  scripts/state_manager.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
