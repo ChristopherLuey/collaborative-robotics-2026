@@ -46,6 +46,7 @@ install(PROGRAMS
   scripts/gemini_planner.py
   scripts/sam3_pointcloud_node.py
   scripts/state_manager.py
+  scripts/text_task_input.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
