@@ -230,7 +230,7 @@ class SAM3ObjectPoseNode(Node):
         response.success = True
         response.pose    = _compute_pose(centroid, major_axis, self.base_frame, stamp)
 
-        response.pose.pose = rotate_pose_about_z(response.pose.pose, 90)
+        response.pose.pose = rotate_pose_about_z(response.pose.pose, 270)
         response.message = (
             f"Detected '{prompt_text}' with {len(points_base)} points."
         )
@@ -305,23 +305,17 @@ def _compute_pose(centroid: np.ndarray, axis: np.ndarray,
 
 def rotate_pose_about_z(pose: Pose, angle_deg: float) -> Pose:
     """
-    Rotate a ROS Pose about the Z axis by angle_deg degrees.
-    Rotates both position and orientation.
+    Rotate only the orientation of a ROS Pose about the Z axis by angle_deg degrees.
+    Position is preserved as-is (already in the correct frame from TF).
     """
-    # Copy the original pose
     rotated_pose = Pose()
-    
-    # --- Rotate position ---
-    theta = np.deg2rad(angle_deg)
-    x, y, z = pose.position.x, pose.position.y, pose.position.z
-    x_new = x * np.cos(theta) - y * np.sin(theta)
-    y_new = x * np.sin(theta) + y * np.cos(theta)
-    z_new = z  # Z stays the same
-    rotated_pose.position.x = x_new
-    rotated_pose.position.y = y_new
-    rotated_pose.position.z = z_new
 
-    # --- Rotate orientation ---
+    # --- Keep position unchanged (already correct from TF transform) ---
+    rotated_pose.position.x = pose.position.x
+    rotated_pose.position.y = pose.position.y
+    rotated_pose.position.z = pose.position.z
+
+    # --- Rotate orientation only ---
     quat_orig = [
         pose.orientation.x,
         pose.orientation.y,
