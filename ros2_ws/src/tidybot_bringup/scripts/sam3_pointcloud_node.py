@@ -47,7 +47,7 @@ from tidybot_msgs.srv import GetObjectPose
 import zmq
 
 REMOTE_IP = "100.77.113.90"
-PORT = 5555
+PORT = 5556
 
 
 class SAM3ObjectPoseNode(Node):
@@ -221,16 +221,34 @@ class SAM3ObjectPoseNode(Node):
             return response
 
         # Centroid + PCA orientation -------------------------------------------
-        centroid    = points_base.mean(axis=0)
+        centroid_cam  = points_cam.mean(axis=0)
+        centroid_base = points_base.mean(axis=0)
+        self.get_logger().info(
+            f"[DEBUG] '{prompt_text}' centroid CAMERA frame: "
+            f"x={centroid_cam[0]:.4f}, y={centroid_cam[1]:.4f}, z={centroid_cam[2]:.4f}"
+        )
+        self.get_logger().info(
+            f"[DEBUG] '{prompt_text}' centroid BASE ({self.base_frame}) frame: "
+            f"x={centroid_base[0]:.4f}, y={centroid_base[1]:.4f}, z={centroid_base[2]:.4f}"
+        )
+
         pca         = PCA(n_components=3)
         pca.fit(points_base)
         major_axis  = pca.components_[0]
 
         stamp = self.get_clock().now().to_msg()
         response.success = True
-        response.pose    = _compute_pose(centroid, major_axis, self.base_frame, stamp)
+        response.pose    = _compute_pose(centroid_base, major_axis, self.base_frame, stamp)
 
         response.pose.pose = rotate_pose_about_z(response.pose.pose, 270)
+
+        self.get_logger().info(
+            f"[DEBUG] '{prompt_text}' FINAL pose (after rotation): "
+            f"x={response.pose.pose.position.x:.4f}, "
+            f"y={response.pose.pose.position.y:.4f}, "
+            f"z={response.pose.pose.position.z:.4f}"
+        )
+
         response.message = (
             f"Detected '{prompt_text}' with {len(points_base)} points."
         )
