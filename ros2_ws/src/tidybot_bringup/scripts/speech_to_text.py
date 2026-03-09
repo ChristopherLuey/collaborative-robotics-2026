@@ -68,7 +68,7 @@ class SpeechToTextNode(Node):
 
     def __init__(self):
         super().__init__('speech_to_text_node')
-        self.transcriber = SpeechTranscriber(sample_rate=48000)
+        self.transcriber = SpeechTranscriber(sample_rate=16000)
         self.client = self.create_client(AudioRecord, '/microphone/record')
         self.get_logger().info('Waiting for /microphone/record service...')
         if not self.client.wait_for_service(timeout_sec=10.0):
