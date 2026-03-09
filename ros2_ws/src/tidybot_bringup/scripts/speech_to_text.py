@@ -62,13 +62,14 @@ class SpeechToTextNode(Node):
 
     to activate the microphone node:
     ros2 run tidybot_control microphone_node --ros-args -p device_index:=4 -p sample_rate:=48000
+    ros2 run tidybot_control microphone_node --ros-args -p device_index:=5 -p sample_rate:=16000
 
     tidybot mic may be 16000 sample rate, 48000 is mine
     """
 
     def __init__(self):
         super().__init__('speech_to_text_node')
-        self.transcriber = SpeechTranscriber(sample_rate=48000)
+        self.transcriber = SpeechTranscriber(sample_rate=16000)
         self.client = self.create_client(AudioRecord, '/microphone/record')
         self.get_logger().info('Waiting for /microphone/record service...')
         if not self.client.wait_for_service(timeout_sec=10.0):
