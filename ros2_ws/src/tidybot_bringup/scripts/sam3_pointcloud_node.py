@@ -38,7 +38,7 @@ from scipy.spatial.transform import Rotation as R
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import PoseStamped, TransformStamped
+from geometry_msgs.msg import PoseStamped, TransformStamped, Pose
 from cv_bridge import CvBridge
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 from tf2_ros import TransformListener, Buffer
@@ -229,6 +229,8 @@ class SAM3ObjectPoseNode(Node):
         stamp = self.get_clock().now().to_msg()
         response.success = True
         response.pose    = _compute_pose(centroid, major_axis, self.base_frame, stamp)
+
+        response.pose.pose = rotate_pose_about_z(response.pose.pose, 90)
         response.message = (
             f"Detected '{prompt_text}' with {len(points_base)} points."
         )
@@ -297,8 +299,45 @@ def _compute_pose(centroid: np.ndarray, axis: np.ndarray,
     pose.pose.orientation.y = float(quat[1])
     pose.pose.orientation.z = float(quat[2])
     pose.pose.orientation.w = float(quat[3])
-
     return pose
+
+
+
+def rotate_pose_about_z(pose: Pose, angle_deg: float) -> Pose:
+    """
+    Rotate a ROS Pose about the Z axis by angle_deg degrees.
+    Rotates both position and orientation.
+    """
+    # Copy the original pose
+    rotated_pose = Pose()
+    
+    # --- Rotate position ---
+    theta = np.deg2rad(angle_deg)
+    x, y, z = pose.position.x, pose.position.y, pose.position.z
+    x_new = x * np.cos(theta) - y * np.sin(theta)
+    y_new = x * np.sin(theta) + y * np.cos(theta)
+    z_new = z  # Z stays the same
+    rotated_pose.position.x = x_new
+    rotated_pose.position.y = y_new
+    rotated_pose.position.z = z_new
+
+    # --- Rotate orientation ---
+    quat_orig = [
+        pose.orientation.x,
+        pose.orientation.y,
+        pose.orientation.z,
+        pose.orientation.w
+    ]
+    r_orig = R.from_quat(quat_orig)
+    r_z = R.from_euler('z', angle_deg, degrees=True)
+    r_new = r_z * r_orig
+    quat_new = r_new.as_quat()  # x, y, z, w
+    rotated_pose.orientation.x = quat_new[0]
+    rotated_pose.orientation.y = quat_new[1]
+    rotated_pose.orientation.z = quat_new[2]
+    rotated_pose.orientation.w = quat_new[3]
+
+    return rotated_pose
 
 
 # --------------------------------------------------------------------------- #

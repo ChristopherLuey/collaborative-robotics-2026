@@ -137,7 +137,7 @@ def launch_setup(context, *args, **kwargs):
             additional_env=hw_node_env,
             parameters=[{
                 'max_linear_vel': 0.5,
-                'max_angular_vel': 1.57,
+                'max_angular_vel': 1.0,
                 'max_linear_accel': 0.25,
                 'max_angular_accel': 0.79,
                 'publish_rate': 50.0,

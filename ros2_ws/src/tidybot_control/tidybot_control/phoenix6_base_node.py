@@ -98,7 +98,7 @@ class Phoenix6BaseNode(Node):
 
         # Position control gains (matching MuJoCo bridge)
         self.kp_linear = 1.0
-        self.kp_angular = 1.8
+        self.kp_angular = 1.85
         self.max_linear_vel = max_vx
         self.max_angular_vel = max_vth
 

@@ -13,7 +13,7 @@ approach_node.py (service-only)
 - Listens to /base/goal_reached (Bool) and logs "Goal reached" when seen.
 - Non-blocking service handler (returns immediately after publishing target).
 """
-
+import numpy as np
 import math
 import sys
 from typing import Optional
@@ -85,7 +85,7 @@ class ApproachNode(Node):
         yaw = math.atan2(siny_cosp, cosy_cosp)
         self.current_x = float(p.x)
         self.current_y = float(p.y)
-        self.current_th = float(yaw) - math.pi/2
+        self.current_th = float(yaw)
         self.odom_seen = True
 
     # goal_reached (log only on transition)
@@ -104,6 +104,7 @@ class ApproachNode(Node):
         """
         # Read request
         pose2d = request.pose
+
         relative = bool(request.relative)
 
         self.get_logger().info(

@@ -180,27 +180,24 @@ class ArmPlanner(Node):
     def _start_plan_request(self, arm_name: str, pose: Pose, duration: float = 3.0, use_orientation: bool = True):
         req = PlanToTarget.Request()
         req.arm_name = arm_name
-        #req.target_pose = pose
-        # TODO: transform pose from "odom" to "base_link" frame if needed (planner expects base_link)
         
         tf_msg = self.tf_buffer.lookup_transform(
             "base_link",
             "odom",
             rclpy.time.Time()
         )
+
         req.target_pose = transform_pose(pose, tf_msg)
+
+        new = rotate_pose_about_z(req.target_pose, -90)
+        req.target_pose = new
+        self.get_logger().info(f"Transformed pose: {new}")
         self.get_logger().info(f"Transformed pose: {req.target_pose}")
         #-0.10, -0.35, 0.55
         req.use_orientation = True
         req.execute = True
         req.duration = float(duration)
         req.max_condition_number = 100.0
-
-        p = pose.position
-        self.get_logger().info(
-            f'Calling /plan_to_target async: arm={arm_name} '
-            f'pos=({p.x:.3f},{p.y:.3f},{p.z:.3f}) use_ori={use_orientation}'
-        )
     
         return self.plan_client.call_async(req)
         #self.get_logger().info('Plan request sent, waiting for response...')
@@ -306,5 +303,42 @@ def main(args=None):
             pass
 
 
+def rotate_pose_about_z(pose: Pose, angle_deg: float) -> Pose:
+    """
+    Rotate a ROS Pose about the Z axis by angle_deg degrees.
+    Rotates both position and orientation.
+    """
+    # Copy the original pose
+    rotated_pose = Pose()
+    
+    # --- Rotate position ---
+    theta = np.deg2rad(angle_deg)
+    x, y, z = pose.position.x, pose.position.y, pose.position.z
+    x_new = x * np.cos(theta) - y * np.sin(theta)
+    y_new = x * np.sin(theta) + y * np.cos(theta)
+    z_new = z  # Z stays the same
+    rotated_pose.position.x = x_new
+    rotated_pose.position.y = y_new
+    rotated_pose.position.z = z_new
+
+    # --- Rotate orientation ---
+    quat_orig = [
+        pose.orientation.x,
+        pose.orientation.y,
+        pose.orientation.z,
+        pose.orientation.w
+    ]
+    r_orig = rot_obj.from_quat(quat_orig)
+    r_z = rot_obj.from_euler('z', angle_deg, degrees=True)
+    r_new = r_z * r_orig
+    quat_new = r_new.as_quat()  # x, y, z, w
+    rotated_pose.orientation.x = quat_new[0]
+    rotated_pose.orientation.y = quat_new[1]
+    rotated_pose.orientation.z = quat_new[2]
+    rotated_pose.orientation.w = quat_new[3]
+
+    return rotated_pose
+
+    
 if __name__ == '__main__':
     main()
