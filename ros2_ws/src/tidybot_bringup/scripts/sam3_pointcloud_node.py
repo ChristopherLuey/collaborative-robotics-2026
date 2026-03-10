@@ -341,6 +341,16 @@ class SAM3ObjectPoseNode(Node):
         mask_np = np.frombuffer(data, dtype=meta["dtype"]).reshape(meta["shape"])
         self.get_logger().info(f"Mask shape: {mask_np.shape}, objects: {meta.get('num_objects', '?')}")
 
+        # Keep only the highest blob (lowest centroid row = highest in image) --
+        num_labels, labels = cv2.connectedComponents(mask_np.astype(np.uint8))
+        if num_labels > 2:  # label 0 is background
+            best_label = min(
+                range(1, num_labels),
+                key=lambda l: np.mean(np.where(labels == l)[0])  # mean row
+            )
+            mask_np = (labels == best_label).astype(np.uint8)
+            self.get_logger().info(f"Multiple blobs found, keeping highest (label {best_label})")
+
         # Back-project to camera-frame points ----------------------------------
         points_cam = self._mask_to_points(mask_np, depth)
         if points_cam is None:
