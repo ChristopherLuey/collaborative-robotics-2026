@@ -20,6 +20,22 @@ if [[ "$*" == *"--no-viewer"* ]]; then
 fi
 
 # ── Environment ────────────────────────────────────────────
+# Deactivate conda if active (ROS2 Humble needs system Python 3.10)
+if [ -n "$CONDA_PREFIX" ]; then
+    echo "Deactivating conda..."
+    conda deactivate 2>/dev/null || true
+fi
+
+# Use the real desktop display, not virtual framebuffer
+if [ "$DISPLAY" = ":99" ] || [ -z "$DISPLAY" ]; then
+    # Find the actual X display from logged-in sessions
+    REAL_DISPLAY=$(who 2>/dev/null | grep '(:[0-9]' | head -1 | sed 's/.*(\(:[0-9]*\)).*/\1/')
+    if [ -n "$REAL_DISPLAY" ]; then
+        export DISPLAY="$REAL_DISPLAY"
+        echo "Set DISPLAY=$DISPLAY (real desktop)"
+    fi
+fi
+
 cd "$WS"
 source setup_env.bash
 export PYTHONPATH="$HOME/.local/lib/python3.10/site-packages:$PYTHONPATH"

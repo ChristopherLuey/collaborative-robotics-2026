@@ -55,8 +55,23 @@ class PlaceAtTool(BaseTool):
             heading = math.atan2(place_y, place_x)
             if not self.ctx.approach_pose(place_x - 0.5 * math.cos(heading),
                                           place_y - 0.5 * math.sin(heading),
-                                          heading):
+                                          heading,
+                                          relative=True):
                 return json.dumps({"status": "error", "message": "approach_pose failed — cannot reach target."})
+
+            # Re-detect target after repositioning (old coords are stale)
+            time.sleep(1.0)
+            log_info(f"Re-locating '{target_description}' after approach...")
+            detection = self.ctx.call_object_isolator(target_description)
+            if detection is None:
+                return json.dumps({
+                    "status": "error",
+                    "message": f"Lost sight of '{target_description}' after approaching."
+                })
+            place_x = detection.x
+            place_y = detection.y
+            place_z = detection.z + 0.03
+            log_info(f"Updated placement: ({place_x:.3f}, {place_y:.3f}, {place_z:.3f})")
 
         hover_z = place_z + config.DEFAULT_HOVER_CLEARANCE
 

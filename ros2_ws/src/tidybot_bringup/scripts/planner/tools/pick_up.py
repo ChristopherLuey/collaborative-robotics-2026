@@ -48,8 +48,23 @@ class PickUpTool(BaseTool):
             heading = math.atan2(grasp_y, grasp_x)
             if not self.ctx.approach_pose(grasp_x - 0.5 * math.cos(heading),
                                           grasp_y - 0.5 * math.sin(heading),
-                                          heading):
+                                          heading,
+                                          relative=True):
                 return json.dumps({"status": "error", "message": "approach_pose failed — cannot reach object."})
+
+            # Re-detect object after repositioning (old coords are stale)
+            time.sleep(1.0)
+            log_info(f"Re-locating '{object_description}' after approach...")
+            detection = self.ctx.call_object_isolator(object_description)
+            if detection is None:
+                return json.dumps({
+                    "status": "error",
+                    "message": f"Lost sight of '{object_description}' after approaching."
+                })
+            grasp_x = detection.x
+            grasp_y = detection.y
+            grasp_z = detection.z
+            log_info(f"Updated grasp: ({grasp_x:.3f}, {grasp_y:.3f}, {grasp_z:.3f})")
 
         log_info("Opening gripper...")
         self.ctx.set_gripper(arm, closed=False)
