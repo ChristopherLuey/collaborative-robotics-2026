@@ -49,10 +49,14 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 
-from geometry_msgs.msg import PoseStamped, Pose
+from geometry_msgs.msg import PoseStamped, Pose, PoseStamped
 from tidybot_msgs.srv import PlanToTarget, RequestArmMotion
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String, Empty, Bool
+from tf2_ros import TransformListener, Buffer
+
+from geometry_msgs.msg import Pose, Point, Quaternion, TransformStamped
+from scipy.spatial.transform import Rotation as rot_obj
 
 
 GRIPPER_OPEN = 0.0
@@ -104,7 +108,11 @@ class ArmPlanner(Node):
         self._prev_queue_len = None
         self._prev_arms_moving = set()
         self.gripper_action_start = self.get_clock().now()
+        self.action_cooldown_sec = 1.5  # delay between queued actions
+        self.last_action_finished = None  # timestamp of last action completion
 
+        self.tf_buffer   = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
     # ---------------- subscribers
     # we want these literally just to check when arm is done moving
@@ -120,6 +128,7 @@ class ArmPlanner(Node):
         # check if arm is currently moving, if it is we just continue:
         now = self.get_clock().now()
         arms_moving = set()
+        #self.get_logger().info(f'Current action queue: {self.action_queue}')
         for arm in ['right', 'left']:
             if (now - self.last_cmd_publish[arm]).nanoseconds < 500_000_000:  # 0.5 second threshold for "still moving"
                 arms_moving.add(arm)
@@ -145,45 +154,66 @@ class ArmPlanner(Node):
                 self.get_logger().error('Planner service returned nothing')
             self.active_future = None
             self.current_state = "idle"
+            self.last_action_finished = self.get_clock().now()
 
         if self.current_state == "idle" and self.action_queue is not None and len(self.action_queue) > 0:
-            next_action = self.action_queue.pop(0)
-            self.get_logger().info(f"Next action: {next_action}")
+            # Wait for cooldown between actions
+            if self.last_action_finished is not None:
+                elapsed = (now - self.last_action_finished).nanoseconds / 1e9
+                if elapsed < self.action_cooldown_sec:
+                    # Still in cooldown — report queue as full so state manager waits
+                    bool_msg = Bool()
+                    bool_msg.data = True
+                    self.queue_full_pub.publish(bool_msg)
+                    return
 
-            if next_action == "reach":
-                self.active_future = self._start_plan_request(arm_name=self.current_request.arm_name, pose=self.current_request.target_pose)
+            action, arm_name, target_pose = self.action_queue.pop(0)
+            self.get_logger().info(f"Next action: {action}")
+
+            if action == "reach":
+                self.active_future = self._start_plan_request(arm_name=arm_name, pose=target_pose)
                 self.current_state = "working"
-            if next_action == "close":
-                self._set_gripper(self.current_request.arm_name, GRIPPER_CLOSED)
-            if next_action == "open":
-                self._set_gripper(self.current_request.arm_name, GRIPPER_OPEN)
+            elif action == "close":
+                self._set_gripper(arm_name, GRIPPER_CLOSED)
+                self.last_action_finished = self.get_clock().now()
+            elif action == "open":
+                self._set_gripper(arm_name, GRIPPER_OPEN)
+                self.last_action_finished = self.get_clock().now()
 
         # Log only when state or queue length changes
         queue_len = len(self.action_queue)
         if self.current_state != self._prev_state or queue_len != self._prev_queue_len:
-            self.get_logger().info(f'State: {self.current_state}, queue: {self.action_queue}')
+            queue_actions = [a[0] for a in self.action_queue]
+            self.get_logger().info(f'State: {self.current_state}, queue: {queue_actions}')
             self._prev_state = self.current_state
             self._prev_queue_len = queue_len
 
         bool_msg = Bool()
-        bool_msg.data = self.current_state != "idle"
+        bool_msg.data = self.current_state != "idle" or len(self.action_queue) > 0
         self.queue_full_pub.publish(bool_msg)
             
 
     def _start_plan_request(self, arm_name: str, pose: Pose, duration: float = 3.0, use_orientation: bool = True):
+        """
+        pose is in world frame (e.g. from camera), we will transform it to base_link frame for the planner
+        """
+
         req = PlanToTarget.Request()
         req.arm_name = arm_name
-        req.target_pose = pose
-        req.use_orientation = use_orientation
+        req.target_pose = transform_pose(pose, self.tf_buffer.lookup_transform("base_link", "odom", rclpy.time.Time()))
+        
+        self.get_logger().info(f'Target pose: {req.target_pose}')
+
+        self.get_logger().info(
+            f'IK request ({arm_name}): '
+            f'odom=({pose.position.x:.3f}, {pose.position.y:.3f}, {pose.position.z:.3f}) '
+            f'-> base_link=({req.target_pose.position.x:.3f}, {req.target_pose.position.y:.3f}, {req.target_pose.position.z:.3f})'
+        )
+        
+        req.use_orientation = True
         req.execute = True
         req.duration = float(duration)
         req.max_condition_number = 100.0
-
-        p = pose.position
-        self.get_logger().info(
-            f'Calling /plan_to_target async: arm={arm_name} '
-            f'pos=({p.x:.3f},{p.y:.3f},{p.z:.3f}) use_ori={use_orientation}'
-        )
     
         return self.plan_client.call_async(req)
         #self.get_logger().info('Plan request sent, waiting for response...')
@@ -206,6 +236,7 @@ class ArmPlanner(Node):
     def _request_arm_motion(self, request: RequestArmMotion.Request, response: RequestArmMotion.Response):
         self.get_logger().info(f'Received RequestArmMotion: arm={request.arm_name} motion={request.motion_type}')
         arm_name = request.arm_name
+
         if arm_name not in ['right', 'left']:
             response.success = False
             response.message = f'Invalid arm_name: {arm_name}'
@@ -223,40 +254,61 @@ class ArmPlanner(Node):
             response.message = 'Invalid target_pose type'
             return response
         
-        self.current_request = request
-
-        # now queue up motion.
+        # now queue up motion. Each entry is (action, arm_name, target_pose).
         if motion_type == "grab":
-            self.action_queue.extend(["reach", "close"]) 
-        
+            self.action_queue.extend([
+                ("open", arm_name, None),
+                ("reach", arm_name, target_pose),
+                ("close", arm_name, None),
+            ])
+
         elif motion_type == "release":
-            self.action_queue.extend(["reach", "open"])
+            self.action_queue.extend([
+                ("close", arm_name, None),
+                ("reach", arm_name, target_pose),
+                ("open", arm_name, None),
+            ])
 
         elif motion_type == "move":
-            self.action_queue.extend(["reach"])
+            self.action_queue.extend([("reach", arm_name, target_pose)])
 
         response.success = True
         response.message = f'Sent execution {motion_type} motion for {arm_name} arm'
+        #self.get_logger().info(f'Current action queue: {self.action_queue}')
         return response
+    
+def transform_pose(pose: Pose, tf: TransformStamped) -> Pose:
+    # Build transformation matrix from TransformStamped
+    t = tf.transform.translation
+    q = tf.transform.rotation
+    rot = rot_obj.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+    T = np.eye(4)
+    T[:3, :3] = rot
+    T[:3, 3] = [t.x, t.y, t.z]
 
-        if res is None:
-            self.get_logger().info(f'Motion planning failed...')
-            response.success = False
-            response.message = 'Planning service call failed'
-            return response
-        
-        # close or open the gripper if requested
-        if motion_type == "grab":
-            self.get_logger().info(f'Closing Gripper...')
-            self._set_gripper(arm_name, GRIPPER_CLOSED)
+    # Build homogeneous coordinate for the input pose
+    p = np.array([pose.position.x, pose.position.y, pose.position.z, 1.0])
 
-        elif motion_type == "release":
-            self.get_logger().info(f'Opening Gripper...')
-            self._set_gripper(arm_name, GRIPPER_OPEN)
-        
-        response.success = True
-        response.message = f'Executed {motion_type} motion for {arm_name} arm'
-        return response
+    # Apply transformation
+    p_transformed = T @ p
+
+    # Rotate the orientation
+    q_pose = [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
+    r_pose = rot_obj.from_quat(q_pose)
+    r_transformed = rot_obj.from_matrix(rot) * r_pose  # Apply rotation
+    q_transformed = r_transformed.as_quat()  # [x, y, z, w]
+
+    # Create new Pose
+    transformed_pose = Pose()
+    transformed_pose.position.x = p_transformed[0]
+    transformed_pose.position.y = p_transformed[1]
+    transformed_pose.position.z = p_transformed[2]
+    transformed_pose.orientation.x = q_transformed[0]
+    transformed_pose.orientation.y = q_transformed[1]
+    transformed_pose.orientation.z = q_transformed[2]
+    transformed_pose.orientation.w = q_transformed[3]
+
+    return transformed_pose
 
 def main(args=None):
     rclpy.init(args=args)

@@ -55,7 +55,8 @@ try:
 except ImportError as e:
     HAS_PHOENIX6 = False
     IMPORT_ERROR = str(e)
-
+import math
+from tf_transformations import quaternion_multiply, quaternion_from_euler
 
 class Phoenix6BaseNode(Node):
     """
@@ -77,11 +78,11 @@ class Phoenix6BaseNode(Node):
             raise RuntimeError('Phoenix 6 / Vehicle class not available')
 
         # Declare parameters
-        self.declare_parameter('max_linear_vel', 0.5)  # m/s
-        self.declare_parameter('max_linear_vel_y', 0.5)  # m/s
-        self.declare_parameter('max_angular_vel', 1.57)  # rad/s (~90 deg/s)
+        self.declare_parameter('max_linear_vel', 0.3)  # m/s
+        self.declare_parameter('max_linear_vel_y', 0.3)  # m/s
+        self.declare_parameter('max_angular_vel', 0.25)  # rad/s (~90 deg/s)
         self.declare_parameter('max_linear_accel', 0.25)  # m/s^2
-        self.declare_parameter('max_angular_accel', 0.79)  # rad/s^2
+        self.declare_parameter('max_angular_accel', 0.35)  # rad/s^2
         self.declare_parameter('publish_rate', 50.0)  # Hz for odometry/TF
         self.declare_parameter('position_tolerance', 0.02)  # meters
         self.declare_parameter('orientation_tolerance', 0.05)  # radians
@@ -97,8 +98,8 @@ class Phoenix6BaseNode(Node):
         self.orientation_tolerance = self.get_parameter('orientation_tolerance').get_parameter_value().double_value
 
         # Position control gains (matching MuJoCo bridge)
-        self.kp_linear = 2.0
-        self.kp_angular = 3.0
+        self.kp_linear = 1.0
+        self.kp_angular = 1.85
         self.max_linear_vel = max_vx
         self.max_angular_vel = max_vth
 
@@ -143,7 +144,7 @@ class Phoenix6BaseNode(Node):
         # Timer for sending commands to vehicle (at policy control rate)
         # The Vehicle class has its own 250 Hz control loop, but we send commands
         # at a lower rate to avoid overwhelming the command queue
-        self.create_timer(0.1, self.control_callback)  # 10 Hz command rate
+        self.create_timer(0.1, self.control_callback)  # 20 Hz command rate
 
         # Start the Vehicle control loop (runs in separate thread at 250 Hz)
         self.vehicle.start_control()
@@ -151,6 +152,9 @@ class Phoenix6BaseNode(Node):
         self.get_logger().info('Phoenix 6 base node ready')
         self.get_logger().info(f'  Max velocity: ({max_vx}, {max_vy}, {max_vth}) m/s, rad/s')
         self.get_logger().info(f'  Publish rate: {self.publish_rate} Hz')
+
+        # Change-detection for log deduplication
+        self._prev_control_phase = None
 
     def cmd_vel_callback(self, msg: Twist):
         """Handle velocity commands for the mobile base."""
@@ -177,13 +181,10 @@ class Phoenix6BaseNode(Node):
             # Robot faces -Y at theta=0 in world frame, so we rotate by -pi/2:
             # x_world = y_input, y_world = -x_input
             self.target_pose = Pose2D()
-            self.target_pose.x = msg.y
-            self.target_pose.y = -msg.x
+            self.target_pose.x = msg.x
+            self.target_pose.y = msg.y
             self.target_pose.theta = msg.theta
             self.last_goal_reached = False
-            self.get_logger().info(
-                f'Target: forward={msg.x:.2f}m -> world ({self.target_pose.x:.2f}, {self.target_pose.y:.2f})'
-            )
 
     def normalize_angle(self, angle):
         """Normalize angle to [-pi, pi]."""
@@ -215,23 +216,20 @@ class Phoenix6BaseNode(Node):
 
         # Heading error (difference between current heading and angle to target)
         # The robot model faces -Y at theta=0, so actual heading is theta - pi/2
-        actual_heading = th - math.pi / 2
+        actual_heading = th
         heading_error = self.normalize_angle(angle_to_target - actual_heading)
 
         # Final orientation error
         orientation_error = self.normalize_angle(tth - th)
-
         # Check if we've reached the goal
         at_position = distance < self.position_tolerance
         at_orientation = abs(orientation_error) < self.orientation_tolerance
-
         if at_position and at_orientation:
             # Goal reached
             if not self.last_goal_reached:
                 goal_msg = Bool()
                 goal_msg.data = True
                 self.goal_reached_pub.publish(goal_msg)
-                self.get_logger().info('Goal reached!')
                 self.last_goal_reached = True
             self.position_control_mode = False
             self.target_pose = None
@@ -239,21 +237,35 @@ class Phoenix6BaseNode(Node):
 
         # Two-phase control: first rotate to face target, then drive + rotate to final
         if not at_position:
-            if abs(heading_error) > 0.3:  # ~17 degrees - need to rotate first
+            if abs(heading_error) > 0.06:  # ~17 degrees - need to rotate first
                 # Rotate in place to face target
                 vx = 0.0
                 vy = 0.0
                 vth = self.kp_angular * heading_error
+                phase = "rotating"
             else:
                 # Drive toward target while correcting heading
                 vx = self.kp_linear * distance
                 vy = 0.0
                 vth = self.kp_angular * heading_error
+                phase = "driving"
         else:
             # Phase 2: At position, rotate to final orientation
             vx = 0.0
             vy = 0.0
             vth = self.kp_angular * orientation_error
+            phase = "final_rotate"
+
+        if phase != self._prev_control_phase:
+            labels = {
+                "rotating": "Rotating to face target...",
+                "driving": "Moving toward target...",
+                "final_rotate": "At position, rotating to final orientation...",
+            }
+            self.get_logger().info(
+                f'{labels[phase]} dist={distance:.3f}m, heading_err={math.degrees(heading_error):.1f}°, ori_err={math.degrees(orientation_error):.1f}°'
+            )
+            self._prev_control_phase = phase
 
         # Apply velocity limits
         vx = np.clip(vx, -self.max_linear_vel, self.max_linear_vel)
@@ -303,17 +315,24 @@ class Phoenix6BaseNode(Node):
         odom.pose.pose.position.y = y
         odom.pose.pose.position.z = 0.0
 
-        # Convert yaw to quaternion
-        cy = math.cos(th * 0.5)
-        sy = math.sin(th * 0.5)
-        odom.pose.pose.orientation.x = 0.0
-        odom.pose.pose.orientation.y = 0.0
-        odom.pose.pose.orientation.z = sy
-        odom.pose.pose.orientation.w = cy
-
         odom.twist.twist.linear.x = vx
         odom.twist.twist.linear.y = vy
         odom.twist.twist.angular.z = vth
+
+        # we rotate by -90 to match sim conventions
+        # Original vehicle yaw
+        q_yaw = quaternion_from_euler(0, 0, th)  # (roll=0, pitch=0, yaw=th)
+
+        # Rotation of 90 deg about Z
+        q_rot = quaternion_from_euler(0, 0, math.pi/2)
+
+        # Combined rotation: q_rot * q_yaw
+        q_final = quaternion_multiply(q_rot, q_yaw)
+
+        odom.pose.pose.orientation.x = q_final[0]
+        odom.pose.pose.orientation.y = q_final[1]
+        odom.pose.pose.orientation.z = q_final[2]
+        odom.pose.pose.orientation.w = q_final[3]
 
         self.odom_pub.publish(odom)
 
@@ -325,10 +344,10 @@ class Phoenix6BaseNode(Node):
         t.transform.translation.x = x
         t.transform.translation.y = y
         t.transform.translation.z = 0.0
-        t.transform.rotation.x = 0.0
-        t.transform.rotation.y = 0.0
-        t.transform.rotation.z = sy
-        t.transform.rotation.w = cy
+        t.transform.rotation.x = odom.pose.pose.orientation.x 
+        t.transform.rotation.y = odom.pose.pose.orientation.y 
+        t.transform.rotation.z = odom.pose.pose.orientation.z 
+        t.transform.rotation.w = odom.pose.pose.orientation.w 
 
         self.tf_broadcaster.sendTransform(t)
 
