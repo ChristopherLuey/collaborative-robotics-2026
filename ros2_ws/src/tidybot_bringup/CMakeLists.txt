@@ -40,10 +40,13 @@ install(PROGRAMS
   scripts/pickup_object_real.py
   scripts/camera_to_robot_coordinate.py
   scripts/pointcloud_from_rgbd_to_occupancy.py
+  scripts/arm_control_node.py
   scripts/approach_node.py
   scripts/get_grasp_pose.py
   scripts/gemini_planner.py
   scripts/sam3_pointcloud_node.py
+  scripts/state_manager.py
+  scripts/text_task_input.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

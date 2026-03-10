@@ -7,6 +7,11 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', os.environ.get('GEMINI_API_KEY
 GEMINI_MODEL = 'gemini-2.0-flash'
 GEMINI_LIVE_MODEL = 'gemini-2.0-flash-live-001'
 
+# Vertex AI (preferred over API key when available)
+USE_VERTEX_AI = os.environ.get('USE_VERTEX_AI', 'true').lower() in ('1', 'true', 'yes')
+VERTEX_PROJECT = os.environ.get('VERTEX_PROJECT', 'gen-lang-client-0801728030')
+VERTEX_LOCATION = os.environ.get('VERTEX_LOCATION', 'us-central1')
+
 # Named locations (x, y, theta) in world frame
 NAMED_LOCATIONS = {
     "start": (0.0, 0.0, 0.0),
@@ -19,7 +24,7 @@ ARM_NAMES = ['right', 'left']
 
 # Navigation
 BASE_LINEAR_SPEED = 0.2   # m/s
-BASE_ANGULAR_SPEED = 0.5  # rad/s
+BASE_ANGULAR_SPEED = 1.0  # rad/s
 
 # Grasping defaults (TODO: replace with perception-derived poses)
 DEFAULT_GRASP_HEIGHT = 0.15       # meters above base
@@ -32,8 +37,10 @@ IK_MAX_CONDITION_NUMBER = 100.0
 DEFAULT_MOTION_DURATION = 2.0
 
 # Camera
-CAMERA_SETTLE_TIME = 1.0  # seconds to wait after pan/tilt command
-SCAN_HEADINGS = 8          # number of base rotations for full scan (8 x 45°)
+CAMERA_SETTLE_TIME = 1.5  # seconds to wait after rotation for camera to settle
+SCAN_HEADINGS = 4          # number of base rotations for full scan (4 x 90°)
+CAMERA_PAN = 0.0           # default camera pan angle (rad)
+CAMERA_TILT = 0.0          # default camera tilt angle (rad, 0 = straight ahead)
 
 # System prompt for the Gemini planner
 SYSTEM_PROMPT = """You are the high-level planner for TidyBot2, a mobile robot with two WidowX 250 arms.

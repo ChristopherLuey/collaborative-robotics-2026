@@ -13,13 +13,13 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-from geometry_msgs.msg import Twist, Pose
+from geometry_msgs.msg import Twist, Pose, Pose2D
 from sensor_msgs.msg import Image, CameraInfo, JointState
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Bool, Float64MultiArray
 from tidybot_msgs.msg import ArmCommand, PanTilt
-from tidybot_msgs.srv import PlanToTarget, GetObjectPose
+from tidybot_msgs.srv import PlanToTarget, GetObjectPose, RequestArmMotion, ApproachPose
 
-from planner.utils import log_info, log_error
+from planner.utils import log_info, log_error, log_service
 from planner import config
 
 try:
@@ -47,6 +47,7 @@ class RosContext(Node):
         # ── Publishers ──────────────────────────────────────────────
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pan_tilt_pub = self.create_publisher(PanTilt, '/camera/pan_tilt', 10)
+        self.pan_tilt_cmd_pub = self.create_publisher(Float64MultiArray, '/camera/pan_tilt_cmd', 10)
 
         self.arm_cmd_pubs = {
             'right': self.create_publisher(ArmCommand, '/right_arm/cmd', 10),
@@ -60,12 +61,15 @@ class RosContext(Node):
         # ── Service clients ─────────────────────────────────────────
         self.plan_client = self.create_client(PlanToTarget, '/plan_to_target')
         self.object_pose_client = self.create_client(GetObjectPose, '/sam3/get_object_pose')
+        self.arm_motion_client = self.create_client(RequestArmMotion, '/request_arm_motion')
+        self.approach_client = self.create_client(ApproachPose, '/approach_pose')
 
         # ── Subscribers ─────────────────────────────────────────────
         qos_be = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
 
         self.latest_rgb = None
         self.latest_depth = None
+        self.rgb_updated = False
         self.camera_info = None
         self.cv_bridge = CvBridge() if CV_AVAILABLE else None
 
@@ -77,6 +81,10 @@ class RosContext(Node):
         self.current_joint_positions = {}
         self.joint_lock = threading.Lock()
         self.create_subscription(JointState, '/joint_states', self._joint_state_cb, 10)
+
+        # ── Goal reached (for approach_pose wait) ──────────────────
+        self.goal_reached_event = threading.Event()
+        self.create_subscription(Bool, '/base/goal_reached', self._goal_reached_cb, 10)
 
         # ── Robot state ─────────────────────────────────────────────
         self.holding_object = False
@@ -90,12 +98,26 @@ class RosContext(Node):
         else:
             log_info("Motion planner not available — arm tools will be limited.")
 
+        log_info("Waiting for /request_arm_motion service (3s)...")
+        self.arm_motion_available = self.arm_motion_client.wait_for_service(timeout_sec=3.0)
+        if self.arm_motion_available:
+            log_info("Arm motion service connected.")
+        else:
+            log_info("Arm motion service not available — arm tools will fail.")
+
+        log_info("Waiting for /approach_pose service (3s)...")
+        self.approach_available = self.approach_client.wait_for_service(timeout_sec=3.0)
+        if self.approach_available:
+            log_info("Approach service connected.")
+        else:
+            log_info("Approach service not available — navigation tools will fail.")
+
         log_info("Waiting for /sam3/get_object_pose service (5s)...")
         self.object_pose_available = self.object_pose_client.wait_for_service(timeout_sec=5.0)
         if self.object_pose_available:
             log_info("SAM3 object pose service connected.")
         else:
-            log_info("SAM3 object pose not available — perception tools will fall back to defaults.")
+            log_info("SAM3 object pose not available — perception tools will fail.")
 
     # ── Callbacks ───────────────────────────────────────────────────
 
@@ -103,6 +125,7 @@ class RosContext(Node):
         if self.cv_bridge:
             try:
                 self.latest_rgb = self.cv_bridge.imgmsg_to_cv2(msg, 'rgb8')
+                self.rgb_updated = True
             except Exception:
                 pass
 
@@ -115,6 +138,10 @@ class RosContext(Node):
 
     def _cam_info_cb(self, msg):
         self.camera_info = msg
+
+    def _goal_reached_cb(self, msg):
+        if msg.data:
+            self.goal_reached_event.set()
 
     def _joint_state_cb(self, msg):
         with self.joint_lock:
@@ -134,6 +161,7 @@ class RosContext(Node):
     def plan_and_execute(self, arm_name: str, x: float, y: float, z: float,
                          duration: float = None, use_orientation: bool = False) -> bool:
         """Call PlanToTarget for position-only IK. Returns True on success."""
+        log_service("/plan_to_target", f"arm={arm_name} pos=({x:.3f}, {y:.3f}, {z:.3f})")
         duration = duration or config.DEFAULT_MOTION_DURATION
 
         if not self.planner_available:
@@ -170,17 +198,29 @@ class RosContext(Node):
 
     def set_gripper(self, arm: str, closed: bool):
         """Open or close a gripper. closed=True → grip, False → release."""
+        log_service(f"/{arm}_gripper/cmd", f"{'close' if closed else 'open'}")
         msg = Float64MultiArray()
         msg.data = [1.0 if closed else 0.0]
         self.gripper_pubs[arm].publish(msg)
 
     def publish_twist_for(self, twist: Twist, duration: float, rate_hz: float = 50.0):
         """Publish a velocity command for a fixed duration, then stop."""
+        log_service("/cmd_vel", f"linear=({twist.linear.x:.2f}, {twist.linear.y:.2f}) angular={twist.angular.z:.2f} duration={duration:.2f}s")
         dt = 1.0 / rate_hz
         for _ in range(int(duration * rate_hz)):
             self.cmd_vel_pub.publish(twist)
             time.sleep(dt)
         self.cmd_vel_pub.publish(Twist())
+
+    def set_pan_tilt(self, pan: float, tilt: float):
+        """Command the camera pan-tilt. Publishes to both PanTilt and Float64MultiArray topics."""
+        pt_msg = PanTilt()
+        pt_msg.pan = pan
+        pt_msg.tilt = tilt
+        self.pan_tilt_pub.publish(pt_msg)
+        cmd_msg = Float64MultiArray()
+        cmd_msg.data = [pan, tilt]
+        self.pan_tilt_cmd_pub.publish(cmd_msg)
 
     def capture_image_bytes(self, quality: int = 85) -> Optional[bytes]:
         """Grab latest RGB frame as JPEG bytes for Gemini Vision. Returns None if unavailable."""
@@ -197,12 +237,81 @@ class RosContext(Node):
         with self.joint_lock:
             return np.array([self.current_joint_positions.get(j, 0.0) for j in joints])
 
+    def request_arm_motion(self, arm_name: str, motion_type: str,
+                           x: float, y: float, z: float) -> bool:
+        """Call RequestArmMotion service (grab/release/move). Returns True on success."""
+        log_service("/request_arm_motion", f"arm={arm_name} type={motion_type} pos=({x:.3f}, {y:.3f}, {z:.3f})")
+        if not self.arm_motion_available:
+            log_error("request_arm_motion", "Service /request_arm_motion not available")
+            return False
+
+        request = RequestArmMotion.Request()
+        request.arm_name = arm_name
+        request.motion_type = motion_type
+        request.target_pose = Pose()
+        request.target_pose.position.x = x
+        request.target_pose.position.y = y
+        request.target_pose.position.z = z
+        request.target_pose.orientation.w = 1.0
+
+        future = self.arm_motion_client.call_async(request)
+        if not self._wait_for_future(future, config.IK_TIMEOUT_SEC):
+            log_error("request_arm_motion", "Timed out")
+            return False
+        if future.exception():
+            log_error("request_arm_motion", f"Exception: {future.exception()}")
+            return False
+
+        result = future.result()
+        if result.success:
+            log_info(f"  Arm motion: {result.message}")
+            return True
+        else:
+            log_error("request_arm_motion", result.message)
+            return False
+
+    def approach_pose(self, x: float, y: float, theta: float, relative: bool = False) -> bool:
+        """Call ApproachPose service for base navigation. Waits for goal_reached. Returns True on success."""
+        log_service("/approach_pose", f"target=({x:.3f}, {y:.3f}, {theta:.3f}) relative={relative}")
+        if not self.approach_available:
+            log_error("approach_pose", "Service /approach_pose not available")
+            return False
+
+        # Clear the event before sending a new target
+        self.goal_reached_event.clear()
+
+        request = ApproachPose.Request()
+        request.pose = Pose2D()
+        request.pose.x = x
+        request.pose.y = y
+        request.pose.theta = theta
+        request.relative = relative
+
+        future = self.approach_client.call_async(request)
+        if not self._wait_for_future(future, 30.0):
+            log_error("approach_pose", "Service call timed out")
+            return False
+        if future.exception():
+            log_error("approach_pose", f"Exception: {future.exception()}")
+            return False
+
+        log_info(f"  Approach: target ({x:.2f}, {y:.2f}, {theta:.2f}), waiting for goal_reached...")
+
+        # Wait for the base to actually arrive (phoenix6_base_node publishes /base/goal_reached)
+        if not self.goal_reached_event.wait(timeout=30.0):
+            log_error("approach_pose", "Timed out waiting for /base/goal_reached")
+            return False
+
+        log_info("  Approach: goal reached.")
+        return True
+
     def call_object_isolator(self, query: str):
         """
         Call the SAM3 GetObjectPose service with a text prompt.
 
         Returns a simple namespace with .x, .y, .z attributes on success, or None on failure.
         """
+        log_service("/sam3/get_object_pose", f"query='{query}'")
         if not self.object_pose_available:
             log_error("object_pose", "SAM3 service not available")
             return None

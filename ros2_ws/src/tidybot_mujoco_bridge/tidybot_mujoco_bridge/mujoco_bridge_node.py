@@ -169,7 +169,7 @@ class MuJoCoBridgeNode(Node):
         self.sim_step_count = 0
         self.base_x = 0.0
         self.base_y = 0.0
-        self.base_th = np.pi / 2  # Robot model faces -Y, rotate 90° to face +X
+        self.base_th = -np.pi / 4  # Robot model faces -Y, rotate -45° so table requires scanning
         self.cmd_vel = Twist()
         self.current_vel = Twist()  # Smoothed velocity
         self.last_sim_time = None

@@ -42,6 +42,25 @@ else
     return 1
 fi
 
+# 1.5 Ensure python3 matches the version ROS2 + the uv venv expect.
+#     The .venv has C extensions built for PYTHON_VERSION (e.g. 3.10).
+#     If something else (conda, miniforge, pyenv, etc.) puts a different
+#     python3 first on PATH, those C extension imports will fail at runtime.
+CURRENT_PY_VERSION=$(python3 --version 2>/dev/null | awk '{print $2}' | cut -d. -f1-2)
+if [ "$CURRENT_PY_VERSION" != "$PYTHON_VERSION" ]; then
+    # Try conda deactivate first
+    conda deactivate 2>/dev/null || true
+    # Strip conda/miniforge/anaconda bin dirs from PATH
+    export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "miniforge" | grep -v "anaconda" | grep -v "/conda" | tr '\n' ':' | sed 's/:$//')
+    NEW_PY_VERSION=$(python3 --version 2>/dev/null | awk '{print $2}' | cut -d. -f1-2)
+    if [ "$NEW_PY_VERSION" = "$PYTHON_VERSION" ]; then
+        echo "✓ Fixed Python version (need $PYTHON_VERSION, had $CURRENT_PY_VERSION)"
+    else
+        echo "⚠ python3 is $NEW_PY_VERSION but ROS2 $ROS_DISTRO needs $PYTHON_VERSION"
+        echo "  The uv venv packages may not load correctly."
+    fi
+fi
+
 # 2. Add uv venv site-packages to PYTHONPATH (for mujoco, mink, numpy, etc.)
 #    This lets ROS2's Python import your uv-managed packages WITHOUT
 #    changing which python binary is used (which would break colcon build)
