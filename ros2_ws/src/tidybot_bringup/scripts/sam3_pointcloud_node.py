@@ -69,7 +69,7 @@ class SAM3ObjectPoseNode(Node):
         # ------------------------------------------------------------------ #
         self.declare_parameter('min_depth_mm',    100)
         self.declare_parameter('max_depth_mm',    5000)
-        self.declare_parameter('min_valid_pts',   30)
+        self.declare_parameter('min_valid_pts',   3)
         self.declare_parameter('base_frame',      'odom')
 
         self.min_z      = self.get_parameter('min_depth_mm').value
@@ -453,7 +453,7 @@ def _compute_door_pose(drawer_points: np.ndarray, knob_points: np.ndarray,
     pose.header.stamp    = stamp
     pose.header.frame_id = frame_id
 
-    pose.pose.position.x = float(centroid[0]) - 0.07
+    pose.pose.position.x = float(centroid[0])
     pose.pose.position.y = float(centroid[1])
     pose.pose.position.z = float(centroid[2])
 

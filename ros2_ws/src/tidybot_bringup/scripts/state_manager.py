@@ -423,46 +423,65 @@ class StateManager(Node):
 
     def execute_drawer(self, object_label:str, max_attempts:int=3):
         """
-        This is task #3
+        This is task #3. Uses self.object_pose (already detected in far search)
+        to move through waypoints: above -> front -> knob (grasp) -> back -> end (release).
         """
         self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.5])) #look forward before picking up
-        object_pose = self.get_object_pose(object_label)
-        self.get_logger().info(f'Waiting on vision...')
 
+        # Use the pose already found during "far search" instead of re-querying vision
+        object_pose = self.object_pose
         if object_pose is None:
+            self.get_logger().info('No object pose available for drawer')
             return False
-        self.get_logger().info(f'Vision success!')
 
-        self.target_pose = object_pose
-        self.get_logger().info(f'Found object pose at {object_pose}, attempting grasp...')
+        self.target_pose = Pose()
+        self.target_pose.position.x = object_pose.position.x
+        self.target_pose.position.y = object_pose.position.y
+        self.target_pose.position.z = object_pose.position.z
+        self.target_pose.orientation.x = object_pose.orientation.x
+        self.target_pose.orientation.y = object_pose.orientation.y
+        self.target_pose.orientation.z = object_pose.orientation.z
+        self.target_pose.orientation.w = object_pose.orientation.w
 
-        above_wp = object_pose
-        above_wp.position.x -= 0.10
+        self.get_logger().info(f'Found object pose at {object_pose}, executing drawer sequence...')
+
+        # Build waypoints as independent copies to avoid aliasing
+        def copy_pose(p):
+            c = Pose()
+            c.position.x = p.position.x
+            c.position.y = p.position.y
+            c.position.z = p.position.z
+            c.orientation.x = p.orientation.x
+            c.orientation.y = p.orientation.y
+            c.orientation.z = p.orientation.z
+            c.orientation.w = p.orientation.w
+            return c
+
+        above_wp = copy_pose(object_pose)
+        above_wp.position.x -= 0.05
         above_wp.position.z += 0.15
-        self.get_logger().info(f'above wp at {above_wp}, attempting grasp...')
+        self.get_logger().info(f'above wp at {above_wp}')
         self.reach_and_stay(arm_name = "right", grasp_pose=above_wp)
 
-        front_wp = object_pose
-        front_wp.position.x -= 0.10
-        self.get_logger().info(f'front_wp at {front_wp}, attempting grasp...')
+        front_wp = copy_pose(object_pose)
+        front_wp.position.x -= 0.05
+        self.get_logger().info(f'front_wp at {front_wp}')
         self.reach_and_stay(arm_name = "right", grasp_pose=front_wp)
 
-        knob_wp = object_pose
-        self.get_logger().info(f'knob_wp at {knob_wp}, attempting grasp...')
+        knob_wp = copy_pose(object_pose)
+        self.get_logger().info(f'knob_wp at {knob_wp}')
         self.grasp_and_stay(arm_name = "right", grasp_pose=knob_wp)
-    
-    
-        back_wp = object_pose
-        back_wp.position.x -= 0.10
-        self.get_logger().info(f'back_wp at {back_wp}, attempting grasp...')
+
+        back_wp = copy_pose(object_pose)
+        back_wp.position.x -= 0.05
+        self.get_logger().info(f'back_wp at {back_wp}')
         self.reach_and_stay(arm_name = "right", grasp_pose=back_wp)
-        
-        end_wp = object_pose
+
+        end_wp = copy_pose(object_pose)
         end_wp.position.z += 0.3
         self.release_and_stay(arm_name = "right", grasp_pose=end_wp)
-    
-    
-        return True        
+
+        return True
 
     def open_door(self, max_attempts:int=3):
         """
