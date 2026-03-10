@@ -98,7 +98,7 @@ class Phoenix6BaseNode(Node):
         self.orientation_tolerance = self.get_parameter('orientation_tolerance').get_parameter_value().double_value
 
         # Position control gains (matching MuJoCo bridge)
-        self.kp_linear = 1.0
+        self.kp_linear = 0.85
         self.kp_angular = 1.85
         self.max_linear_vel = max_vx
         self.max_angular_vel = max_vth

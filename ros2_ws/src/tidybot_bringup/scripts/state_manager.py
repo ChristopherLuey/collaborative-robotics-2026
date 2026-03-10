@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import time
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray, String, Bool
@@ -32,7 +34,7 @@ class StateManager(Node):
         self.object_pose = None
         self.target_pose = None
         self.base_home = None
-        self.object_grasp_thresh = 0.35 # how close we need to be to an object to attempt a grasp
+        self.object_grasp_thresh = 0.475 # how close we need to be to an object to attempt a grasp
         self.object_release_thresh = 0.5 # how close we need to be to a target location to attempt a release
         self.get_logger().info('Transcription subscriber node started.')
 
@@ -113,6 +115,61 @@ class StateManager(Node):
         if self.current_request == "":
             return
         self.get_logger().info(self.inner_state)
+
+        if self.current_request == "Task1":
+            if self.inner_state == "far search":
+
+                self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.0])) #look forward before picking up
+                self.object_pose = self.get_object_pose(self.object, allow_search=False)
+                if self.object_pose is not None:
+                    self.inner_state = "Moving to object"
+                    des_base = self._find_base_coordinates(self.object_pose, self.object_grasp_thresh)
+                    self.move_base(des_base) #get us started moving!
+                else:
+                    if self._prev_wait_reason != 'vision':
+                        self.get_logger().info('Waiting on vision...')
+                        self._prev_wait_reason = 'vision'
+                    return
+                
+            if self.inner_state == "Moving to object":
+                self.get_logger().info('Moving to object...')
+                if not self.base_ready:
+                    if self._prev_wait_reason != 'base_moving_to_object':
+                        self.get_logger().info('Waiting for base to be ready...')
+                        self._prev_wait_reason = 'base_moving_to_object'
+                    return
+                else: #this means we arrived!
+                    #self.get_object_pose(self.object, allow_search=False) #get an updated pose for grasping, since we should be closer now.
+                    self.get_logger().info('LOOK AT ME')
+                    success = self.pickup_object(self.object)
+                    if success:
+                        self.inner_state = "Grasping object"
+                    else:
+                        return
+
+            elif self.inner_state == "Grasping object":
+                if not self.arms_ready:
+                    if self._prev_wait_reason != 'arms_grasping':
+                        self.get_logger().info('Waiting for arms to be ready...')
+                        self._prev_wait_reason = 'arms_grasping'
+                    return
+                else: #this means we should have the object grasped!
+                    self.get_logger().info('Transitioning to return to home.')
+                    self.move_base(self.base_home) #move back to rest pose
+                    self.inner_state = "Returning to Home"
+            elif self.inner_state == "Returning to Home":
+                if not self.base_ready:
+                    if self._prev_wait_reason != 'base_returning':
+                        self.get_logger().info('Waiting for base to be ready...')
+                        self._prev_wait_reason = 'base_returning'
+                    return
+                else: #this means we are back home and done with the task!
+                    self.get_logger().info('Arrived at home, waiting for next command!')
+                    self.inner_state = "idle"
+                    self.current_request = "idle" #transition to idle state, waiting for next request
+            
+            return
+        
         if self.current_request == "Task2":
 
             if self.inner_state == "far search":
@@ -156,6 +213,8 @@ class StateManager(Node):
                     self.inner_state = "Searching for target"
 
             elif self.inner_state == "Searching for target":
+                self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.0])) #look forward before picking up
+                time.sleep(0.5)
                 self.target_pose = self.get_object_pose(self.target) #find basket pose
                 if self.target_pose is not None:
                     des_base = self._find_base_coordinates(self.target_pose, self.object_release_thresh)
