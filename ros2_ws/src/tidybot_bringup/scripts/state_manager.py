@@ -469,6 +469,7 @@ class StateManager(Node):
         self.reach_and_stay(arm_name = "right", grasp_pose=front_wp)
 
         knob_wp = copy_pose(object_pose)
+        knob_wp.position.z -= 0.05
         self.get_logger().info(f'knob_wp at {knob_wp}')
         self.grasp_and_stay(arm_name = "right", grasp_pose=knob_wp)
 

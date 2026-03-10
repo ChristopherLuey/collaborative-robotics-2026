@@ -455,7 +455,7 @@ def _compute_door_pose(drawer_points: np.ndarray, knob_points: np.ndarray,
 
     pose.pose.position.x = float(centroid[0])
     pose.pose.position.y = float(centroid[1])
-    pose.pose.position.z = float(centroid[2])
+    pose.pose.position.z = float(centroid[2]) + 0.1
 
     # # Gripper y-axis along drawer pull direction, z-axis up
     # z = np.array([0.0, 0.0, 1.0])
