@@ -29,8 +29,7 @@
         <p class="subtitle">ME 326: Collaborative Robotics | Stanford University | Winter 2026</p>
 
         <div class="hero-media">
-            <img src="assets/hero-placeholder.svg" alt="TidyBot++ in action" class="hero-image">
-            <p class="placeholder-note">Hero photo/video of TidyBot++ in action</p>
+            <img src="assets/hero-screenshot.png" alt="TidyBot++ MuJoCo simulation" class="hero-image">
         </div>
 
         <div class="intro-text">
@@ -67,13 +66,18 @@
         <h2>Methods</h2>
 
         <div class="methods-intro">
-            <h3>System Architecture</h3>
+            <h3>High-Level Architecture</h3>
             <p>Our system follows a modular perception-planning-control architecture, orchestrated by an LLM-based planner.</p>
         </div>
 
         <div class="architecture-diagram">
-            <img src="assets/architecture-placeholder.svg" alt="System architecture diagram" class="diagram-image">
-            <p class="placeholder-note">System architecture diagram</p>
+            <img src="high_level_architecture.png" alt="High-level architecture: Language Prompt to Planner to Control and Perception" class="diagram-image">
+        </div>
+
+        <div class="architecture-diagram" style="margin-top: 2.5rem;">
+            <h3>System Nodes &amp; Services</h3>
+            <p>The ROS2 node graph showing how the StateManager orchestrates Base, ArmPlanner, Vision (SAM3), and Voice nodes via topics and service calls.</p>
+            <img src="system_nodes.png" alt="System nodes and services diagram" class="diagram-image">
         </div>
 
         <div class="methods-grid">
@@ -130,22 +134,16 @@
             </div>
         </div>
 
-        <div class="pipeline-flow">
-            <h3>Pipeline Flow (Real Hardware)</h3>
-            <div class="pipeline">
-                <div class="pipeline-step">Voice/Text Command</div>
-                <div class="pipeline-arrow"></div>
-                <div class="pipeline-step">Gemini LLM Planner<span>Task decomposition</span></div>
-                <div class="pipeline-arrow"></div>
-                <div class="pipeline-branches">
-                    <div class="pipeline-step small">SAM3 Vision<span>/sam3/get_object_pose</span></div>
-                    <div class="pipeline-step small">Base Navigation<span>/approach_pose</span></div>
-                    <div class="pipeline-step small">Arm IK Planning<span>/plan_to_target</span></div>
-                    <div class="pipeline-step small">Gripper Control<span>open/close</span></div>
-                </div>
-                <div class="pipeline-arrow"></div>
-                <div class="pipeline-step">Task Complete</div>
-            </div>
+        <div class="architecture-diagram" style="margin-top: 2.5rem;">
+            <h3>Task 2 State Machine (Pick &amp; Place)</h3>
+            <p>The state machine for sequential pick-and-place tasks, with event-driven transitions based on <code>base_ready</code> and <code>arms_ready</code> signals and grasp retry logic.</p>
+            <img src="task_2_state_machine.png" alt="Task 2 state machine: far search to Moving to object to Grasping to Searching target to Moving to target to Releasing to Returning Home to idle" class="diagram-image">
+        </div>
+
+        <div class="architecture-diagram" style="margin-top: 2.5rem;">
+            <h3>Task 3 State Machine (Drawer Articulation)</h3>
+            <p>The state machine for opening drawers, with handle detection retry and grasp failure recovery.</p>
+            <img src="task_3_state_machine.png" alt="Task 3 state machine: far search to Moving to door to Finding handle to Grasping handle to Releasing handle to idle" class="diagram-image">
         </div>
     </div>
 </section>
@@ -159,11 +157,14 @@
             <h3>Task 1: Object Retrieval</h3>
             <p>The robot successfully interprets voice commands to locate, navigate to, and retrieve target objects in a cluttered environment.</p>
 
+            <div class="result-media">
+                <img src="assets/bannana.jpg" alt="Banana on table - object retrieval target" class="result-image">
+            </div>
+
             <div class="video-placeholder">
                 <div class="placeholder-box">
                     <p>VIDEO: Voice command &rarr; scan &rarr; navigate &rarr; pick &rarr; return</p>
                     <!-- Replace with: <video src="assets/task1_demo.mp4" controls></video> -->
-                    <!-- Or YouTube embed: <iframe src="https://www.youtube.com/embed/VIDEO_ID" ...></iframe> -->
                 </div>
             </div>
 
@@ -180,6 +181,15 @@
         <div class="result-block">
             <h3>Task 2: Sequential Task</h3>
             <p>Given multi-step natural language instructions, the robot decomposes and executes chained actions.</p>
+
+            <div class="result-media">
+                <img src="assets/dinner.jpg" alt="Dinner table setting - sequential task target" class="result-image">
+            </div>
+
+            <div class="result-media" style="margin-top: 1.5rem;">
+                <h4>Task 2 State Machine</h4>
+                <img src="task_2_state_machine.png" alt="Task 2 pick-and-place state machine" class="result-image diagram">
+            </div>
 
             <div class="video-placeholder">
                 <div class="placeholder-box">
@@ -201,6 +211,15 @@
             <h3>Task 3: Drawer Articulation</h3>
             <p>The robot opens and closes a drawer, demonstrating manipulation of articulated objects.</p>
 
+            <div class="result-media">
+                <img src="assets/mugs.jpg" alt="Mugs - objects inside drawer" class="result-image">
+            </div>
+
+            <div class="result-media" style="margin-top: 1.5rem;">
+                <h4>Task 3 State Machine</h4>
+                <img src="task_3_state_machine.png" alt="Task 3 drawer articulation state machine" class="result-image diagram">
+            </div>
+
             <div class="video-placeholder">
                 <div class="placeholder-box">
                     <p>VIDEO: Drawer open/close demo</p>
@@ -217,9 +236,14 @@
 
         <div class="result-block">
             <h3>Simulation vs. Real Hardware</h3>
-            <div class="video-placeholder">
-                <div class="placeholder-box">
-                    <p>IMAGE/VIDEO: Side-by-side MuJoCo simulation and real robot comparison</p>
+            <div class="result-media-row">
+                <div class="result-media">
+                    <img src="assets/hero-screenshot.png" alt="MuJoCo simulation" class="result-image">
+                    <p class="media-caption">MuJoCo Simulation</p>
+                </div>
+                <div class="result-media">
+                    <img src="assets/driving.png" alt="Real hardware environment" class="result-image">
+                    <p class="media-caption">Real Hardware Environment</p>
                 </div>
             </div>
         </div>
