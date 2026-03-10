@@ -34,6 +34,7 @@ class StateManager(Node):
         self.object_pose = None
         self.target_pose = None
         self.base_home = None
+        self.door_grasp_thresh =0.45 #how close to door for grasp
         self.object_grasp_thresh = 0.475 # how close we need to be to an object to attempt a grasp
         self.object_release_thresh = 0.5 # how close we need to be to a target location to attempt a release
         self.get_logger().info('Transcription subscriber node started.')
@@ -262,9 +263,70 @@ class StateManager(Node):
 
 
         if self.current_request == "Task3":
-            # TODO write door logic
-            self.open_door()
-            self.current_request = ""
+            if self.inner_state == "far search":
+
+                self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.3])) #look forward before picking up
+                self.object_pose = self.get_object_pose(self.object, allow_search=False)
+                if self.object_pose is not None:
+                    self.inner_state = "Moving to object"
+                    #des_base = self._find_base_coordinates(self.object_pose, self.door_grasp_thresh)
+                    #self.move_base(des_base) #get us started moving!
+                else:
+                    if self._prev_wait_reason != 'vision':
+                        self.get_logger().info('Waiting on vision...')
+                        self._prev_wait_reason = 'vision'
+                    return
+                
+            elif self.inner_state == "Moving to object":
+                self.get_logger().info('Moving to object...')
+                success = self.execute_drawer(self.object)
+                if success:
+                    self.inner_state = "Grasping object"
+                else:
+                    return
+
+            elif self.inner_state == "Grasping object":
+                if not self.arms_ready:
+                    if self._prev_wait_reason != 'arms_grasping':
+                        self.get_logger().info('Waiting for arms to be ready...')
+                        self._prev_wait_reason = 'arms_grasping'
+                    return
+                else: #this means we should have the object grasped!
+                    self.get_logger().info('Transitioning to searching for target.')
+                    self.inner_state = "Backing up"
+
+            elif self.inner_state == "Backing up":
+                # self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.0])) #look forward before picking up
+                # time.sleep(0.5)
+                if self.target_pose is not None:
+                    self.target_pose.position.x += -0.1 #add a little height to the release pose to make it easier to drop in
+                    self.get_logger().info('LOOK AT ME')
+                    #self.grasp_and_stay(arm_name = "right", grasp_pose=self.target_pose)
+                    #time.sleep(0.2)
+                    self.inner_state = "Releasing object"
+                
+
+            elif self.inner_state == "Releasing object":
+                if not self.arms_ready:
+                    if self._prev_wait_reason != 'arms_releasing':
+                        self.get_logger().info('Waiting for arms to be ready...')
+                        self._prev_wait_reason = 'arms_releasing'
+                    return
+                else: #this means we should have the object released!
+                    self.get_logger().info('Returning to home position.')
+                    #self.move_base(self.base_home) #move back to rest pose
+                    self.inner_state = "Returning to Home"
+            elif self.inner_state == "Returning to Home":
+                if not self.base_ready:
+                    if self._prev_wait_reason != 'base_returning':
+                        self.get_logger().info('Waiting for base to be ready...')
+                        self._prev_wait_reason = 'base_returning'
+                    return
+                else: #this means we are back home and done with the task!
+                    self.get_logger().info('Arrived at home, waiting for next command!')
+                    self.inner_state = "idle"
+                    self.current_request = "idle" #transition to idle state, waiting for next request
+            
             return
 
     def _find_base_coordinates(self, target_pose:Pose, distance_threshold:float):
@@ -358,7 +420,49 @@ class StateManager(Node):
         end_pose = self.get_rest_pose()
         self.grasp_and_hold(arm_name = "right", grasp_pose=object_pose, end_pose=end_pose)
         return True
-            
+
+    def execute_drawer(self, object_label:str, max_attempts:int=3):
+        """
+        This is task #3
+        """
+        self.pan_tilt_pub.publish(Float64MultiArray(data=[0.0, 0.5])) #look forward before picking up
+        object_pose = self.get_object_pose(object_label)
+        self.get_logger().info(f'Waiting on vision...')
+
+        if object_pose is None:
+            return False
+        self.get_logger().info(f'Vision success!')
+
+        self.target_pose = object_pose
+        self.get_logger().info(f'Found object pose at {object_pose}, attempting grasp...')
+
+        above_wp = object_pose
+        above_wp.position.x -= 0.10
+        above_wp.position.z += 0.15
+        self.get_logger().info(f'above wp at {above_wp}, attempting grasp...')
+        self.reach_and_stay(arm_name = "right", grasp_pose=above_wp)
+
+        front_wp = object_pose
+        front_wp.position.x -= 0.10
+        self.get_logger().info(f'front_wp at {front_wp}, attempting grasp...')
+        self.reach_and_stay(arm_name = "right", grasp_pose=front_wp)
+
+        knob_wp = object_pose
+        self.get_logger().info(f'knob_wp at {knob_wp}, attempting grasp...')
+        self.grasp_and_stay(arm_name = "right", grasp_pose=knob_wp)
+    
+    
+        back_wp = object_pose
+        back_wp.position.x -= 0.10
+        self.get_logger().info(f'back_wp at {back_wp}, attempting grasp...')
+        self.reach_and_stay(arm_name = "right", grasp_pose=back_wp)
+        
+        end_wp = object_pose
+        end_wp.position.z += 0.3
+        self.release_and_stay(arm_name = "right", grasp_pose=end_wp)
+    
+    
+        return True        
 
     def open_door(self, max_attempts:int=3):
         """
@@ -451,7 +555,30 @@ class StateManager(Node):
             return response.pose.pose
         
         return None
-    
+    def grasp_and_stay(self, arm_name:str, grasp_pose:Pose):
+        """
+        Execute a grasp at the given pose and return to the end pose.
+        """
+        self.get_logger().info(f'Executing grasp at {grasp_pose}')
+        response = self.arm_client.call_async(RequestArmMotion.Request(arm_name=arm_name, motion_type="grab", target_pose=grasp_pose))
+        self.arms_ready = False
+
+    def reach_and_stay(self, arm_name:str, grasp_pose:Pose):
+        """
+        Execute a grasp at the given pose and return to the end pose.
+        """
+        self.get_logger().info(f'Executing grasp at {grasp_pose}')
+        response = self.arm_client.call_async(RequestArmMotion.Request(arm_name=arm_name, motion_type="move", target_pose=grasp_pose))
+        self.arms_ready = False
+
+    def release_and_stay(self, arm_name:str, grasp_pose:Pose):
+        """
+        Execute a grasp at the given pose and return to the end pose.
+        """
+        self.get_logger().info(f'Executing grasp at {grasp_pose}')
+        response = self.arm_client.call_async(RequestArmMotion.Request(arm_name=arm_name, motion_type="release", target_pose=grasp_pose))
+        self.arms_ready = False
+
     def grasp_and_hold(self, arm_name:str, grasp_pose:Pose, end_pose:Pose):
         """
         Execute a grasp at the given pose and return to the end pose.

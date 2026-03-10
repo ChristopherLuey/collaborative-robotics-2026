@@ -240,7 +240,7 @@ class SpeechToTextNode(Node):
 
         elif "open" in request_words:
             task.data = "Task3"
-            obj.data = "cabinet"
+            obj.data = "door"
 
         else:
             self.get_logger().info("Failed to match request to a task...") 
