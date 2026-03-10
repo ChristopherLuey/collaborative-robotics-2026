@@ -1,0 +1,637 @@
+/* ===== Reset & Base ===== */
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --cardinal: #8C1515;
+    --cardinal-dark: #6B0F0F;
+    --cardinal-light: #B83A3A;
+    --sandstone: #D2C295;
+    --sandstone-light: #F0EBD8;
+    --cool-gray: #4D4F53;
+    --warm-gray: #3F3C30;
+    --white: #FFFFFF;
+    --off-white: #F7F5F0;
+    --text-primary: #2E2D29;
+    --text-secondary: #585754;
+    --border: #E0DDD5;
+    --shadow: rgba(0, 0, 0, 0.08);
+    --shadow-strong: rgba(0, 0, 0, 0.15);
+}
+
+html {
+    scroll-behavior: smooth;
+    font-size: 16px;
+}
+
+body {
+    font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text-primary);
+    background: var(--white);
+    line-height: 1.6;
+}
+
+/* ===== Typography ===== */
+h1, h2, h3, h4 {
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+h2 {
+    font-size: 2rem;
+    margin-bottom: 1.5rem;
+    color: var(--cardinal);
+    border-bottom: 3px solid var(--cardinal);
+    padding-bottom: 0.5rem;
+    display: inline-block;
+}
+
+h3 {
+    font-size: 1.35rem;
+    margin-bottom: 0.75rem;
+    color: var(--warm-gray);
+}
+
+h4 {
+    font-size: 1.05rem;
+    margin-bottom: 0.4rem;
+    color: var(--cardinal-dark);
+}
+
+p {
+    margin-bottom: 1rem;
+}
+
+a {
+    color: var(--cardinal);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+a:hover {
+    color: var(--cardinal-light);
+}
+
+code {
+    background: var(--sandstone-light);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+    font-family: 'Source Code Pro', 'Consolas', monospace;
+}
+
+/* ===== Layout ===== */
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 2rem;
+}
+
+.section {
+    padding: 5rem 0;
+}
+
+.section:nth-child(odd) {
+    background: var(--white);
+}
+
+.section:nth-child(even) {
+    background: var(--off-white);
+}
+
+/* ===== Navigation ===== */
+#navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: var(--cardinal);
+    box-shadow: 0 2px 8px var(--shadow-strong);
+    transition: background 0.3s;
+}
+
+.nav-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 60px;
+}
+
+.nav-logo {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--white);
+    letter-spacing: 0.5px;
+}
+
+.nav-logo:hover {
+    color: var(--sandstone-light);
+}
+
+.nav-links {
+    list-style: none;
+    display: flex;
+    gap: 2rem;
+}
+
+.nav-links a {
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 0.25rem 0;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.nav-links a:hover,
+.nav-links a.active {
+    color: var(--white);
+    border-bottom-color: var(--sandstone);
+}
+
+/* ===== Hero Section ===== */
+.hero-section {
+    padding-top: 8rem;
+    text-align: center;
+}
+
+.hero-section h1 {
+    color: var(--cardinal);
+}
+
+.subtitle {
+    font-size: 1.15rem;
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+}
+
+.hero-media {
+    margin: 2rem auto;
+    max-width: 800px;
+}
+
+.hero-image {
+    width: 100%;
+    max-height: 400px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.placeholder-note {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    margin-top: 0.5rem;
+}
+
+.intro-text {
+    max-width: 800px;
+    margin: 2rem auto;
+    font-size: 1.1rem;
+    text-align: left;
+}
+
+/* ===== Task Cards ===== */
+.task-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    margin: 2.5rem 0;
+}
+
+.card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2rem 1.5rem;
+    text-align: left;
+    box-shadow: 0 2px 8px var(--shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px var(--shadow-strong);
+}
+
+.card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--cardinal);
+    color: var(--white);
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+}
+
+.card h3 {
+    color: var(--cardinal-dark);
+}
+
+.card p {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+}
+
+/* ===== GitHub Link ===== */
+.github-link {
+    display: inline-block;
+    background: var(--warm-gray);
+    color: var(--white);
+    padding: 0.75rem 2rem;
+    border-radius: 6px;
+    font-weight: 600;
+    margin-top: 1rem;
+    transition: background 0.2s;
+}
+
+.github-link:hover {
+    background: var(--cool-gray);
+    color: var(--white);
+}
+
+/* ===== Methods Section ===== */
+.methods-intro {
+    margin-bottom: 2rem;
+}
+
+.architecture-diagram {
+    margin: 2rem 0;
+    text-align: center;
+}
+
+.diagram-image {
+    max-width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.methods-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin: 2.5rem 0;
+}
+
+.method-block {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+.method-block h3 {
+    color: var(--cardinal);
+    border-bottom: 2px solid var(--sandstone);
+    padding-bottom: 0.4rem;
+    margin-bottom: 1rem;
+    display: inline-block;
+    font-size: 1.2rem;
+}
+
+.method-content h4 {
+    margin-top: 0.8rem;
+}
+
+.method-content p {
+    font-size: 0.93rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+/* ===== Software Stack ===== */
+.software-stack {
+    margin: 2.5rem 0;
+}
+
+.stack-items {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.stack-item {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--cardinal);
+    border-radius: 4px;
+    padding: 1rem 1.25rem;
+}
+
+.stack-item strong {
+    display: block;
+    color: var(--cardinal-dark);
+    margin-bottom: 0.25rem;
+}
+
+.stack-item span {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+/* ===== Pipeline Flow ===== */
+.pipeline-flow {
+    margin: 2.5rem 0;
+}
+
+.pipeline {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.pipeline-step {
+    background: var(--cardinal);
+    color: var(--white);
+    padding: 0.75rem 2rem;
+    border-radius: 6px;
+    font-weight: 600;
+    text-align: center;
+    min-width: 280px;
+}
+
+.pipeline-step span {
+    display: block;
+    font-weight: 400;
+    font-size: 0.85rem;
+    opacity: 0.85;
+}
+
+.pipeline-step.small {
+    background: var(--cool-gray);
+    padding: 0.5rem 1.25rem;
+    font-size: 0.9rem;
+    min-width: 200px;
+}
+
+.pipeline-arrow {
+    width: 2px;
+    height: 20px;
+    background: var(--cardinal);
+    position: relative;
+}
+
+.pipeline-arrow::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid var(--cardinal);
+}
+
+.pipeline-branches {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+/* ===== Results Section ===== */
+.result-block {
+    margin-bottom: 3rem;
+}
+
+.result-block:last-child {
+    margin-bottom: 0;
+}
+
+.video-placeholder {
+    margin: 1.5rem 0;
+}
+
+.placeholder-box {
+    background: var(--sandstone-light);
+    border: 2px dashed var(--sandstone);
+    border-radius: 8px;
+    padding: 4rem 2rem;
+    text-align: center;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.key-results {
+    margin-top: 1rem;
+}
+
+.key-results h4 {
+    color: var(--warm-gray);
+}
+
+.key-results ul {
+    list-style: none;
+    padding: 0;
+}
+
+.key-results li {
+    padding: 0.4rem 0 0.4rem 1.5rem;
+    position: relative;
+    color: var(--text-secondary);
+}
+
+.key-results li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.85rem;
+    width: 8px;
+    height: 8px;
+    background: var(--cardinal);
+    border-radius: 50%;
+}
+
+/* ===== Future Work Section ===== */
+.future-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+.future-card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px var(--shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.future-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px var(--shadow-strong);
+}
+
+.future-card h3 {
+    color: var(--cardinal);
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+}
+
+.future-card p {
+    font-size: 0.93rem;
+    color: var(--text-secondary);
+    margin-bottom: 0;
+}
+
+/* ===== Team Section ===== */
+.team-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2rem;
+    margin-bottom: 3rem;
+}
+
+.team-member {
+    text-align: center;
+}
+
+.member-photo {
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    margin: 0 auto 1rem;
+    overflow: hidden;
+    border: 3px solid var(--cardinal);
+}
+
+.member-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.placeholder-photo {
+    background: var(--sandstone-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.placeholder-photo::after {
+    content: '';
+    width: 50px;
+    height: 50px;
+    background: var(--sandstone);
+    border-radius: 50%;
+}
+
+.team-member h3 {
+    font-size: 1.05rem;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.team-member .role {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 0;
+}
+
+.course-info {
+    text-align: center;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+}
+
+.course-info p {
+    margin-bottom: 0.4rem;
+    color: var(--text-secondary);
+}
+
+/* ===== Footer ===== */
+footer {
+    background: var(--warm-gray);
+    color: rgba(255, 255, 255, 0.7);
+    text-align: center;
+    padding: 1.5rem 0;
+    font-size: 0.9rem;
+}
+
+footer p {
+    margin: 0;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+    h1 {
+        font-size: 2rem;
+    }
+
+    h2 {
+        font-size: 1.6rem;
+    }
+
+    .task-cards,
+    .methods-grid,
+    .stack-items,
+    .future-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .team-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .pipeline-branches {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .nav-links {
+        gap: 1rem;
+        font-size: 0.85rem;
+    }
+}
+
+@media (max-width: 600px) {
+    .container {
+        padding: 0 1rem;
+    }
+
+    .section {
+        padding: 3rem 0;
+    }
+
+    .hero-section {
+        padding-top: 5rem;
+    }
+
+    h1 {
+        font-size: 1.6rem;
+    }
+
+    .team-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .nav-links {
+        gap: 0.75rem;
+    }
+
+    .nav-links a {
+        font-size: 0.8rem;
+    }
+}

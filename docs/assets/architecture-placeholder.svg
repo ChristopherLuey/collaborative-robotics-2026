@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500" viewBox="0 0 900 500">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#8C1515"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="500" fill="#F7F5F0" rx="8"/>
+
+  <!-- Title -->
+  <text x="450" y="35" text-anchor="middle" fill="#2E2D29" font-family="sans-serif" font-size="18" font-weight="bold">System Architecture</text>
+
+  <!-- Input Layer -->
+  <rect x="340" y="55" width="220" height="45" rx="6" fill="#8C1515"/>
+  <text x="450" y="83" text-anchor="middle" fill="white" font-family="sans-serif" font-size="14" font-weight="bold">Voice / Text Input</text>
+
+  <!-- Arrow -->
+  <line x1="450" y1="100" x2="450" y2="125" stroke="#8C1515" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- LLM Planner -->
+  <rect x="290" y="125" width="320" height="55" rx="6" fill="#6B0F0F"/>
+  <text x="450" y="150" text-anchor="middle" fill="white" font-family="sans-serif" font-size="14" font-weight="bold">Gemini LLM Planner</text>
+  <text x="450" y="168" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="sans-serif" font-size="11">Task Decomposition &amp; Function Calling</text>
+
+  <!-- Arrows to modules -->
+  <line x1="350" y1="180" x2="150" y2="220" stroke="#8C1515" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="420" y1="180" x2="350" y2="220" stroke="#8C1515" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="480" y1="180" x2="550" y2="220" stroke="#8C1515" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="550" y1="180" x2="750" y2="220" stroke="#8C1515" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Perception -->
+  <rect x="50" y="220" width="200" height="90" rx="6" fill="#D2C295" stroke="#8C1515" stroke-width="1.5"/>
+  <text x="150" y="245" text-anchor="middle" fill="#2E2D29" font-family="sans-serif" font-size="13" font-weight="bold">Perception</text>
+  <text x="150" y="265" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">SAM3 + RealSense D435</text>
+  <text x="150" y="282" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">Object Detection &amp; 3D Pose</text>
+  <text x="150" y="299" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">Pan-Tilt Scanning</text>
+
+  <!-- Navigation -->
+  <rect x="265" y="220" width="170" height="90" rx="6" fill="#D2C295" stroke="#8C1515" stroke-width="1.5"/>
+  <text x="350" y="245" text-anchor="middle" fill="#2E2D29" font-family="sans-serif" font-size="13" font-weight="bold">Navigation</text>
+  <text x="350" y="265" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">Base Controller (250Hz)</text>
+  <text x="350" y="282" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">Phoenix6 / CAN Bus</text>
+  <text x="350" y="299" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">/approach_pose</text>
+
+  <!-- Manipulation -->
+  <rect x="450" y="220" width="200" height="90" rx="6" fill="#D2C295" stroke="#8C1515" stroke-width="1.5"/>
+  <text x="550" y="245" text-anchor="middle" fill="#2E2D29" font-family="sans-serif" font-size="13" font-weight="bold">Manipulation</text>
+  <text x="550" y="265" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">IK Planning (Pinocchio)</text>
+  <text x="550" y="282" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">Bimanual WX250s Arms</text>
+  <text x="550" y="299" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">/plan_to_target</text>
+
+  <!-- Gripper -->
+  <rect x="665" y="220" width="170" height="90" rx="6" fill="#D2C295" stroke="#8C1515" stroke-width="1.5"/>
+  <text x="750" y="245" text-anchor="middle" fill="#2E2D29" font-family="sans-serif" font-size="13" font-weight="bold">Gripper</text>
+  <text x="750" y="265" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">Force-Feedback Grasping</text>
+  <text x="750" y="282" text-anchor="middle" fill="#585754" font-family="sans-serif" font-size="11">Coordinated Open/Close</text>
+
+  <!-- Arrows down to ROS2 -->
+  <line x1="150" y1="310" x2="150" y2="345" stroke="#4D4F53" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="350" y1="310" x2="350" y2="345" stroke="#4D4F53" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="550" y1="310" x2="550" y2="345" stroke="#4D4F53" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="750" y1="310" x2="750" y2="345" stroke="#4D4F53" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ROS2 Layer -->
+  <rect x="50" y="345" width="800" height="45" rx="6" fill="#4D4F53"/>
+  <text x="450" y="373" text-anchor="middle" fill="white" font-family="sans-serif" font-size="14" font-weight="bold">ROS2 Humble &mdash; Topics, Services, Actions</text>
+
+  <!-- Arrow to hardware -->
+  <line x1="450" y1="390" x2="450" y2="415" stroke="#4D4F53" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Hardware Layer -->
+  <rect x="150" y="415" width="600" height="45" rx="6" fill="#3F3C30"/>
+  <text x="450" y="438" text-anchor="middle" fill="white" font-family="sans-serif" font-size="13">TidyBot++ Hardware: 3-DOF Base | 2x WX250s Arms | RealSense D435 | Pan-Tilt</text>
+  <text x="450" y="453" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-family="sans-serif" font-size="11">(or MuJoCo Simulation Bridge)</text>
+
+  <!-- Side labels -->
+  <text x="20" y="155" fill="#8C1515" font-family="sans-serif" font-size="11" font-weight="bold" transform="rotate(-90,20,155)">PLANNING</text>
+  <text x="20" y="275" fill="#8C1515" font-family="sans-serif" font-size="11" font-weight="bold" transform="rotate(-90,20,275)">EXECUTION</text>
+  <text x="20" y="395" fill="#8C1515" font-family="sans-serif" font-size="11" font-weight="bold" transform="rotate(-90,20,395)">INFRA</text>
+</svg>
