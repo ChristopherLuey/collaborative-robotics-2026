@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TidyBot++ | ME 326 Collaborative Robotics</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Navigation -->
+<nav id="navbar">
+    <div class="nav-container">
+        <a href="#home" class="nav-logo">TidyBot++</a>
+        <ul class="nav-links">
+            <li><a href="#home">Home</a></li>
+            <li><a href="#methods">Methods</a></li>
+            <li><a href="#results">Results</a></li>
+            <li><a href="#future">Future Work</a></li>
+            <li><a href="#team">Team</a></li>
+        </ul>
+    </div>
+</nav>
+
+<!-- Slide 1: Home -->
+<section id="home" class="section hero-section">
+    <div class="container">
+        <h1>TidyBot++ Collaborative Robotic Assistant</h1>
+        <p class="subtitle">ME 326: Collaborative Robotics | Stanford University | Winter 2026</p>
+
+        <div class="hero-media">
+            <img src="assets/hero-placeholder.svg" alt="TidyBot++ in action" class="hero-image">
+            <p class="placeholder-note">Hero photo/video of TidyBot++ in action</p>
+        </div>
+
+        <div class="intro-text">
+            <p>We built an intelligent robotic assistant using the TidyBot++ bimanual mobile manipulator. Our system interprets natural language commands &mdash; via voice or text &mdash; to perceive its environment, plan actions, and autonomously execute manipulation tasks. The robot can retrieve objects on command, perform multi-step sequential tasks, and open articulated furniture like drawers.</p>
+        </div>
+
+        <div class="task-cards">
+            <div class="card">
+                <div class="card-icon">1</div>
+                <h3>Object Retrieval</h3>
+                <p>"Find the apple and bring it here." Voice command triggers a full pipeline: scan the scene, locate the object, navigate to it, pick it up, and return.</p>
+            </div>
+            <div class="card">
+                <div class="card-icon">2</div>
+                <h3>Sequential Task</h3>
+                <p>"Find the red apple and place it in the brown basket." Multi-step natural language commands that chain perception, navigation, and manipulation.</p>
+            </div>
+            <div class="card">
+                <div class="card-icon">3</div>
+                <h3>Drawer Articulation</h3>
+                <p>Open and close a drawer using bimanual coordination, demonstrating dexterous manipulation of articulated objects.</p>
+            </div>
+        </div>
+
+        <a href="https://github.com/ChristopherLuey/collaborative-robotics-2026" class="github-link" target="_blank" rel="noopener">
+            View on GitHub
+        </a>
+    </div>
+</section>
+
+<!-- Slide 2: Methods -->
+<section id="methods" class="section">
+    <div class="container">
+        <h2>Methods</h2>
+
+        <div class="methods-intro">
+            <h3>System Architecture</h3>
+            <p>Our system follows a modular perception-planning-control architecture, orchestrated by an LLM-based planner.</p>
+        </div>
+
+        <div class="architecture-diagram">
+            <img src="assets/architecture-placeholder.svg" alt="System architecture diagram" class="diagram-image">
+            <p class="placeholder-note">System architecture diagram</p>
+        </div>
+
+        <div class="methods-grid">
+            <div class="method-block">
+                <h3>Perception</h3>
+                <div class="method-content">
+                    <h4>SAM3 + RealSense D435</h4>
+                    <p>We use Segment Anything Model 3 (SAM3) combined with the Intel RealSense D435 depth camera to detect and localize objects in 3D space. Given a text prompt (e.g., "red apple"), the vision pipeline segments the object in the RGB image and projects it into a 3D point cloud to obtain a world-frame pose.</p>
+                    <h4>Pan-Tilt Camera</h4>
+                    <p>The camera is mounted on a 2-DOF pan-tilt unit, enabling the robot to scan its environment by sweeping across the scene.</p>
+                </div>
+            </div>
+
+            <div class="method-block">
+                <h3>Planning</h3>
+                <div class="method-content">
+                    <h4>LLM Planner (Google Gemini)</h4>
+                    <p>Natural language commands are processed by a Gemini-based planner that decomposes high-level instructions into a sequence of robot actions through automatic function calling. Available tools include <code>scan</code>, <code>navigate_to</code>, <code>pick_up</code>, <code>place_at</code>, <code>open_door</code>, and <code>move_arm</code>.</p>
+                    <h4>Voice &amp; Text Input</h4>
+                    <p>Users can interact via text or voice (using the Gemini Live API for real-time speech understanding).</p>
+                    <h4>State Machine</h4>
+                    <p>The planner orchestrates task execution through a state machine that sequences perception, navigation, and manipulation actions, with error handling and replanning.</p>
+                </div>
+            </div>
+
+            <div class="method-block">
+                <h3>Control</h3>
+                <div class="method-content">
+                    <h4>Base Navigation</h4>
+                    <p>The 3-DOF holonomic base (Phoenix6 motors over CAN) navigates to target poses using the <code>/approach_pose</code> service. The base controller runs at 250Hz for smooth motion.</p>
+                    <h4>Arm Motion Planning</h4>
+                    <p>Inverse kinematics is solved using Mink (simulation) and Pinocchio (real hardware) with multi-seed IK for robust solutions. The IK planner handles the full 6-DOF WX250s arm workspace.</p>
+                    <h4>Gripper &amp; Bimanual Coordination</h4>
+                    <p>Coordinated gripper open/close with force feedback for reliable grasping. Both arms can be controlled independently or in coordination for tasks requiring two-handed manipulation (e.g., drawer articulation).</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="software-stack">
+            <h3>Software Stack</h3>
+            <div class="stack-items">
+                <div class="stack-item">
+                    <strong>ROS2 Humble</strong>
+                    <span>Message passing, service calls, launch system</span>
+                </div>
+                <div class="stack-item">
+                    <strong>MuJoCo</strong>
+                    <span>Physics simulation (500Hz physics, 100Hz state publishing, 30fps camera)</span>
+                </div>
+                <div class="stack-item">
+                    <strong>8 Custom ROS2 Packages</strong>
+                    <span>tidybot_bringup, tidybot_control, tidybot_ik, tidybot_description, tidybot_msgs, tidybot_mujoco_bridge, tidybot_client, tidybot_network_bridge</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="pipeline-flow">
+            <h3>Pipeline Flow (Real Hardware)</h3>
+            <div class="pipeline">
+                <div class="pipeline-step">Voice/Text Command</div>
+                <div class="pipeline-arrow"></div>
+                <div class="pipeline-step">Gemini LLM Planner<span>Task decomposition</span></div>
+                <div class="pipeline-arrow"></div>
+                <div class="pipeline-branches">
+                    <div class="pipeline-step small">SAM3 Vision<span>/sam3/get_object_pose</span></div>
+                    <div class="pipeline-step small">Base Navigation<span>/approach_pose</span></div>
+                    <div class="pipeline-step small">Arm IK Planning<span>/plan_to_target</span></div>
+                    <div class="pipeline-step small">Gripper Control<span>open/close</span></div>
+                </div>
+                <div class="pipeline-arrow"></div>
+                <div class="pipeline-step">Task Complete</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 3: Results -->
+<section id="results" class="section">
+    <div class="container">
+        <h2>Results</h2>
+
+        <div class="result-block">
+            <h3>Task 1: Object Retrieval</h3>
+            <p>The robot successfully interprets voice commands to locate, navigate to, and retrieve target objects in a cluttered environment.</p>
+
+            <div class="video-placeholder">
+                <div class="placeholder-box">
+                    <p>VIDEO: Voice command &rarr; scan &rarr; navigate &rarr; pick &rarr; return</p>
+                    <!-- Replace with: <video src="assets/task1_demo.mp4" controls></video> -->
+                    <!-- Or YouTube embed: <iframe src="https://www.youtube.com/embed/VIDEO_ID" ...></iframe> -->
+                </div>
+            </div>
+
+            <div class="key-results">
+                <h4>Key Results</h4>
+                <ul>
+                    <li>Successfully identifies and localizes objects using SAM3 + depth</li>
+                    <li>Navigates to objects and executes reliable grasps</li>
+                    <li>Returns to starting position with object in hand</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="result-block">
+            <h3>Task 2: Sequential Task</h3>
+            <p>Given multi-step natural language instructions, the robot decomposes and executes chained actions.</p>
+
+            <div class="video-placeholder">
+                <div class="placeholder-box">
+                    <p>VIDEO: "Find the red apple and place it in the brown basket"</p>
+                </div>
+            </div>
+
+            <div class="key-results">
+                <h4>Key Results</h4>
+                <ul>
+                    <li>LLM correctly decomposes multi-step commands into atomic actions</li>
+                    <li>Chains perception &rarr; navigation &rarr; pick &rarr; navigation &rarr; place</li>
+                    <li>Handles different object/container combinations</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="result-block">
+            <h3>Task 3: Drawer Articulation</h3>
+            <p>The robot opens and closes a drawer, demonstrating manipulation of articulated objects.</p>
+
+            <div class="video-placeholder">
+                <div class="placeholder-box">
+                    <p>VIDEO: Drawer open/close demo</p>
+                </div>
+            </div>
+
+            <div class="key-results">
+                <h4>Key Results</h4>
+                <ul>
+                    <li><!-- Fill in with specific results from drawer task demos --></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="result-block">
+            <h3>Simulation vs. Real Hardware</h3>
+            <div class="video-placeholder">
+                <div class="placeholder-box">
+                    <p>IMAGE/VIDEO: Side-by-side MuJoCo simulation and real robot comparison</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 4: Future Work -->
+<section id="future" class="section">
+    <div class="container">
+        <h2>Future Work</h2>
+
+        <div class="future-grid">
+            <div class="future-card">
+                <h3>Improved Grasping</h3>
+                <p>Integrate GraspAnything for 6-DOF grasp pose prediction, enabling more robust grasping of diverse objects in cluttered scenes.</p>
+            </div>
+            <div class="future-card">
+                <h3>Dynamic Replanning</h3>
+                <p>Enhance the LLM planner with real-time failure detection and replanning &mdash; if a grasp fails or an object moves, the system should recover autonomously.</p>
+            </div>
+            <div class="future-card">
+                <h3>SLAM &amp; Mapping</h3>
+                <p>Add full SLAM capability using the onboard LiDAR for persistent environment mapping and long-range navigation.</p>
+            </div>
+            <div class="future-card">
+                <h3>Bimanual Task Complexity</h3>
+                <p>Extend bimanual coordination to more complex tasks such as folding, packing, or tool use.</p>
+            </div>
+            <div class="future-card">
+                <h3>Human-Robot Collaboration</h3>
+                <p>Develop shared-workspace capabilities where the robot can hand objects to humans, respond to gestures, and coordinate actions in real time.</p>
+            </div>
+            <div class="future-card">
+                <h3>Learning from Demonstration</h3>
+                <p>Allow the robot to learn new manipulation skills from human demonstrations, reducing the need for manual programming of each task.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Slide 5: Team -->
+<section id="team" class="section">
+    <div class="container">
+        <h2>Team</h2>
+
+        <div class="team-grid">
+            <div class="team-member">
+                <div class="member-photo placeholder-photo"></div>
+                <h3>Aarya Sumuk</h3>
+                <p class="role"><!-- Role/contribution --></p>
+            </div>
+            <div class="team-member">
+                <div class="member-photo placeholder-photo"></div>
+                <h3>Max Burns</h3>
+                <p class="role"><!-- Role/contribution --></p>
+            </div>
+            <div class="team-member">
+                <div class="member-photo placeholder-photo"></div>
+                <h3>Maisha Khanum</h3>
+                <p class="role"><!-- Role/contribution --></p>
+            </div>
+            <div class="team-member">
+                <div class="member-photo placeholder-photo"></div>
+                <h3>Julien Buist-Thuillier</h3>
+                <p class="role"><!-- Role/contribution --></p>
+            </div>
+            <div class="team-member">
+                <div class="member-photo placeholder-photo"></div>
+                <h3>Rohan Garg</h3>
+                <p class="role"><!-- Role/contribution --></p>
+            </div>
+            <div class="team-member">
+                <div class="member-photo placeholder-photo"></div>
+                <h3>Marie Imad</h3>
+                <p class="role"><!-- Role/contribution --></p>
+            </div>
+            <div class="team-member">
+                <div class="member-photo placeholder-photo"></div>
+                <h3>Christopher Luey</h3>
+                <p class="role"><!-- Role/contribution --></p>
+            </div>
+        </div>
+
+        <div class="course-info">
+            <p><strong>Course:</strong> ME 326 Collaborative Robotics, Stanford University, Winter 2026</p>
+            <p><strong>Instructor:</strong> Professor Monroe Kennedy</p>
+            <p><strong>GitHub:</strong> <a href="https://github.com/ChristopherLuey/collaborative-robotics-2026" target="_blank" rel="noopener">github.com/ChristopherLuey/collaborative-robotics-2026</a></p>
+        </div>
+    </div>
+</section>
+
+<footer>
+    <div class="container">
+        <p>ME 326 Collaborative Robotics &bull; Stanford University &bull; Winter 2026</p>
+    </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
