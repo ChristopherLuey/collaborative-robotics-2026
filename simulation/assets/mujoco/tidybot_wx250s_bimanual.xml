@@ -133,14 +133,14 @@
         <body name="pan_link" pos="0 0 0">
         <inertial pos="0.012 0.000496 0.018504" mass="0.098997"
                   diaginertia="0.0000276300 0.0000204300 0.0000276300"/>
-        <joint name="camera_pan" type="hinge" axis="0 0 1" range="-1.5708 1.5708" damping="5.0"/>
+        <joint name="camera_pan" type="hinge" axis="0 0 1" range="-1.5708 1.5708" damping="1.0"/>
         <geom type="mesh" mesh="locobot_pan" euler="0 0 1.5708" contype="0" conaffinity="0" group="2" rgba="0.2 0.2 0.2 1"/>
 
         <!-- Tilt link - offset from pan link per URDF: xyz="0.025034 0 0.019" -->
         <body name="tilt_link" pos="0.025034 0 0.019">
           <inertial pos="0.0237737 0 0" mass="0.019845"
                     diaginertia="0.0000021677 0.0000063634 0.0000066157"/>
-          <joint name="camera_tilt" type="hinge" axis="0 1 0" range="-1.5708 1.309" damping="5.0"/>
+          <joint name="camera_tilt" type="hinge" axis="0 1 0" range="-1.5708 1.309" damping="1.0"/>
           <geom type="mesh" mesh="locobot_tilt" euler="0 0 1.5708" contype="0" conaffinity="0" group="2" rgba="0.2 0.2 0.2 1"/>
 
           <!-- Camera link - offset from tilt link per URDF: xyz="0.05318 0.0175 0.000009" -->
@@ -332,9 +332,9 @@
     <position name="joint_y" joint="joint_y" kp="1000000" kv="50000"/>
     <position name="joint_th" joint="joint_th" kp="50000" kv="1000"/>
 
-    <!-- Pan-Tilt Camera actuators (stiff to hold position during base rotation) -->
-    <position name="camera_pan" joint="camera_pan" kp="10000" kv="500"/>
-    <position name="camera_tilt" joint="camera_tilt" kp="10000" kv="500"/>
+    <!-- Pan-Tilt Camera actuators -->
+    <position name="camera_pan" joint="camera_pan" kp="500" kv="50"/>
+    <position name="camera_tilt" joint="camera_tilt" kp="500" kv="50"/>
 
     <!-- Right WX250s arm actuators (6-DOF) -->
     <position class="small_actuator" name="right_waist" joint="right_waist"/>

@@ -37,7 +37,7 @@ IK_MAX_CONDITION_NUMBER = 100.0
 DEFAULT_MOTION_DURATION = 2.0
 
 # Camera
-CAMERA_SETTLE_TIME = 0.5  # seconds to wait after pan/tilt command
+CAMERA_SETTLE_TIME = 1.5  # seconds to wait after rotation for camera to settle
 SCAN_HEADINGS = 4          # number of base rotations for full scan (4 x 90°)
 CAMERA_PAN = 0.0           # default camera pan angle (rad)
 CAMERA_TILT = 0.0          # default camera tilt angle (rad, 0 = straight ahead)
