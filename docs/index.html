@@ -81,10 +81,11 @@
                 <h3>Perception</h3>
                 <div class="method-content">
                     <h4>SAM3 + RealSense D435</h4>
-                    <p>We use Segment Anything Model 3 (SAM3) combined with the Intel RealSense D435 depth camera to detect and localize objects in 3D space. Given a text prompt (e.g., "red apple"), the vision pipeline segments the object in the RGB image and projects it into a 3D point cloud to obtain a world-frame pose.</p>
+                    <p>We use Segment Anything Model 3 (SAM3) combined with the Intel RealSense D435 depth camera to detect and localize objects in 3D space. Given a text prompt (e.g., "red apple"), the vision pipeline segments the object in the RGB image and projects it into a segmented 3D point cloud.</p>
+                    <h4>Principal Component Analysis </h4>
+                    <p>We use PCA to obtain the segmented pointcloud's major and normal axis, which is used to construct a grasp pose relative to the shortest width of the object and its centroid.</p>
                     <h4>Pan-Tilt Camera</h4>
-                    <p>The camera is mounted on a 2-DOF pan-tilt unit, enabling the robot to scan its environment by sweeping across the scene.</p>
-                </div>
+                    <p>The camera is mounted on a 2-DOF pan-tilt unit, enabling the robot to scan its environment by sweeping across the scene.</p>                </div>
             </div>
 
             <div class="method-block">
