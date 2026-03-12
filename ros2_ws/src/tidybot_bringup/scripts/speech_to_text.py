@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 
 from google.cloud import speech_v1p1beta1 as speech
 import rclpy

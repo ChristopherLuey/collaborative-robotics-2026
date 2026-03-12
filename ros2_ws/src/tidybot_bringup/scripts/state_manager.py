@@ -464,17 +464,23 @@ class StateManager(Node):
         self.reach_and_stay(arm_name = "right", grasp_pose=above_wp)
 
         front_wp = copy_pose(object_pose)
-        front_wp.position.x -= 0.05
+        front_wp.position.x -= 0.15
         self.get_logger().info(f'front_wp at {front_wp}')
         self.reach_and_stay(arm_name = "right", grasp_pose=front_wp)
 
         knob_wp = copy_pose(object_pose)
-        knob_wp.position.z -= 0.05
+        knob_wp.position.z -= 0.067
+        knob_wp.position.y -= 0.03
         self.get_logger().info(f'knob_wp at {knob_wp}')
         self.grasp_and_stay(arm_name = "right", grasp_pose=knob_wp)
 
+        knob_back_wp = copy_pose(object_pose)
+        # knob_back_wp.position.x += 0.15
+        self.get_logger().info(f'knob_back_wp at {knob_back_wp}')
+        self.reach_and_stay(arm_name = "right", grasp_pose=knob_back_wp)
+
         back_wp = copy_pose(object_pose)
-        back_wp.position.x -= 0.05
+        back_wp.position.x -= 0.1
         self.get_logger().info(f'back_wp at {back_wp}')
         self.reach_and_stay(arm_name = "right", grasp_pose=back_wp)
 
