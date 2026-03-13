@@ -86,6 +86,8 @@
                 <div class="method-content">
                     <h4>SAM3 + RealSense D435</h4>
                     <p>We use Segment Anything Model 3 (SAM3) combined with the Intel RealSense D435 depth camera to detect and localize objects in 3D space. Given a text prompt (e.g., "red apple"), the vision pipeline segments the object in the RGB image and projects it into a 3D point cloud to obtain a world-frame pose.</p>
+                    <h4>PCA Grasp Pose Estimation</h4>
+                    <p>PCA analysis on the segmented point cloud extracts the major and normal axes, constructing a grasp pose aligned to the shortest width of the object at its centroid.</p>
                     <h4>Pan-Tilt Camera</h4>
                     <p>The camera is mounted on a 2-DOF pan-tilt unit, enabling the robot to scan its environment by sweeping across the scene.</p>
                 </div>
@@ -97,9 +99,9 @@
                     <h4>LLM Planner (Google Gemini)</h4>
                     <p>Natural language commands are processed by a Gemini-based planner that decomposes high-level instructions into a sequence of robot actions through automatic function calling. Available tools include <code>scan</code>, <code>navigate_to</code>, <code>pick_up</code>, <code>place_at</code>, <code>open_door</code>, and <code>move_arm</code>.</p>
                     <h4>Voice &amp; Text Input</h4>
-                    <p>Users can interact via text or voice (using the Gemini Live API for real-time speech understanding).</p>
+                    <p>Users can interact via text or voice (using the Gemini Live API for real-time speech understanding). A ROS2 voice node passively listens for an activation phrase ("Hey Robot!"), then actively records the request via Google Cloud Speech-to-Text.</p>
                     <h4>State Machine</h4>
-                    <p>The planner orchestrates task execution through a state machine that sequences perception, navigation, and manipulation actions, with error handling and replanning.</p>
+                    <p>The planner orchestrates task execution through a state machine that sequences perception, navigation, and manipulation actions, with error handling (retry on failure, replan after max retries).</p>
                 </div>
             </div>
 
@@ -107,13 +109,31 @@
                 <h3>Control</h3>
                 <div class="method-content">
                     <h4>Base Navigation</h4>
-                    <p>The 3-DOF holonomic base (Phoenix6 motors over CAN) navigates to target poses using the <code>/approach_pose</code> service. The base controller runs at 250Hz for smooth motion.</p>
+                    <p>The 3-DOF holonomic base (Phoenix6 motors over CAN) performs 3-phase position control to goal poses, publishing when the goal is reached. Supports both relative and world-frame commands.</p>
                     <h4>Arm Motion Planning</h4>
-                    <p>Inverse kinematics is solved using Mink (simulation) and Pinocchio (real hardware) with multi-seed IK for robust solutions. The IK planner handles the full 6-DOF WX250s arm workspace.</p>
+                    <p>An action queue service processes high-level commands (Grab, Release, Move) by decomposing them into IK-solved waypoint sequences. Non-blocking service calls allow smooth chaining of multi-step motions.</p>
                     <h4>Gripper &amp; Bimanual Coordination</h4>
-                    <p>Coordinated gripper open/close with force feedback for reliable grasping. Both arms can be controlled independently or in coordination for tasks requiring two-handed manipulation (e.g., drawer articulation).</p>
+                    <p>Coordinated gripper open/close with force feedback for reliable grasping. Both arms can be controlled independently or in coordination for tasks like drawer articulation.</p>
                 </div>
             </div>
+        </div>
+
+        <div class="architecture-diagram" style="margin-top: 2.5rem;">
+            <h3>Perception Node</h3>
+            <p>ROS2 service: given a text prompt, SAM3 segments the object and PCA analysis on the 3D point cloud yields a grasp pose. For Task 3, an additional "shiny gold knob" prompt localizes the drawer handle.</p>
+            <img src="perception_diagram.png" alt="Perception node: SAM3 segmentation and PCA grasp pose estimation on 3D point cloud" class="diagram-image">
+        </div>
+
+        <div class="architecture-diagram" style="margin-top: 2.5rem;">
+            <h3>LLM Planner</h3>
+            <p>Google Gemini with automatic function calling dispatches actions to a state machine that waits for hardware-ready signals at each step. Error handling retries failed actions and replans after max retries.</p>
+            <img src="planning_diagram.png" alt="Planning architecture: Gemini LLM with function calling, error handling, state machine, and robot actions" class="diagram-image">
+        </div>
+
+        <div class="architecture-diagram" style="margin-top: 2.5rem;">
+            <h3>Voice Control</h3>
+            <p>A ROS2 node with Google Cloud Speech-to-Text passively listens for an activation phrase, then actively records the user's request and matches it to a task for the State Manager.</p>
+            <img src="voice_control.png" alt="Voice control flow: passive listening for activation phrase, active listening for request, speech-to-text, task matching" class="diagram-image">
         </div>
 
         <div class="software-stack">
@@ -204,10 +224,16 @@
 
         <div class="result-block">
             <h3>Task 3: Drawer Articulation</h3>
-            <p>The robot opens and closes a drawer, demonstrating manipulation of articulated objects.</p>
+            <p>The robot opens a drawer using one arm, demonstrating dexterous manipulation of articulated objects. Key design considerations include handle geometry, static/kinetic friction during pulling, and constraining the end-effector along the drawer rail axis to avoid lateral torque.</p>
 
             <div class="result-media">
-                <img src="assets/mugs.jpg" alt="Mugs - objects inside drawer" class="result-image">
+                <img src="task3_design.png" alt="Task 3 design considerations: handle geometry, pull force, direction of motion" class="result-image diagram">
+            </div>
+
+            <div class="result-media" style="margin-top: 1.5rem;">
+                <h4>Arm Control Waypoint Sequence</h4>
+                <p>Five non-blocking service calls from the high-level planner, with the action queue continually publishing queue length to indicate completion.</p>
+                <img src="arm_control_sequence.png" alt="Arm control waypoint sequence for drawer opening" class="result-image diagram">
             </div>
 
             <div class="result-media" style="margin-top: 1.5rem;">
@@ -222,7 +248,9 @@
             <div class="key-results">
                 <h4>Key Results</h4>
                 <ul>
-                    <li><!-- Fill in with specific results from drawer task demos --></li>
+                    <li>SAM3 localizes drawer handle via "shiny gold knob" prompt + PCA for grasp pose</li>
+                    <li>Action queue decomposes pull into 5 waypoints sent as non-blocking service calls</li>
+                    <li>Grasp retry logic (max 3x) handles initial grasp failures</li>
                 </ul>
             </div>
         </div>
@@ -250,28 +278,28 @@
 
         <div class="future-grid">
             <div class="future-card">
-                <h3>Improved Grasping</h3>
-                <p>Integrate GraspAnything for 6-DOF grasp pose prediction, enabling more robust grasping of diverse objects in cluttered scenes.</p>
+                <h3>Robust Grasping</h3>
+                <p>Integrate GraspAnything for 6-DOF grasp pose prediction. Add force feedback and tactile sensors for more reliable manipulation.</p>
             </div>
             <div class="future-card">
                 <h3>Dynamic Replanning</h3>
-                <p>Enhance the LLM planner with real-time failure detection and replanning &mdash; if a grasp fails or an object moves, the system should recover autonomously.</p>
+                <p>Real-time failure detection via memory or a VLA planner to auto-recover if actions fail, reducing the need for manual intervention.</p>
             </div>
             <div class="future-card">
                 <h3>SLAM &amp; Mapping</h3>
-                <p>Add full SLAM capability using the onboard LiDAR for persistent environment mapping and long-range navigation.</p>
+                <p>Safety-critical and robust SLAM with onboard LiDAR for obstacle avoidance and persistent environment mapping.</p>
             </div>
             <div class="future-card">
-                <h3>Bimanual Task Complexity</h3>
-                <p>Extend bimanual coordination to more complex tasks such as folding, packing, or tool use.</p>
+                <h3>Bimanual Complexity</h3>
+                <p>Extend dual-arm coordination to folding, packing, and tool use tasks.</p>
             </div>
             <div class="future-card">
                 <h3>Human-Robot Collaboration</h3>
-                <p>Develop shared-workspace capabilities where the robot can hand objects to humans, respond to gestures, and coordinate actions in real time.</p>
+                <p>Hand objects to humans, respond to gestures, operate in shared spaces. Intent estimation for anticipating human needs.</p>
             </div>
             <div class="future-card">
                 <h3>Learning from Demonstration</h3>
-                <p>Allow the robot to learn new manipulation skills from human demonstrations, reducing the need for manual programming of each task.</p>
+                <p>Learn manipulation skills from human demonstrations via behavior cloning, imitation learning, ACT, and diffusion policy.</p>
             </div>
         </div>
     </div>
