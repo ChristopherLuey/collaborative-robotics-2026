@@ -319,6 +319,40 @@ code {
     margin-bottom: 0.5rem;
 }
 
+/* ===== Node Details ===== */
+.node-details {
+    margin: 2.5rem 0;
+}
+
+.node-details > h3 {
+    color: var(--cardinal);
+    border-bottom: 3px solid var(--cardinal);
+    padding-bottom: 0.5rem;
+    display: inline-block;
+    margin-bottom: 2rem;
+}
+
+.node-block {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+.node-block h4 {
+    font-size: 1.15rem;
+    color: var(--cardinal);
+    margin-bottom: 1rem;
+}
+
+.node-image {
+    width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
 /* ===== Software Stack ===== */
 .software-stack {
     margin: 2.5rem 0;
