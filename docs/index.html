@@ -85,12 +85,11 @@
                 <h3>Perception</h3>
                 <div class="method-content">
                     <h4>SAM3 + RealSense D435</h4>
-                    <p>We use Segment Anything Model 3 (SAM3) combined with the Intel RealSense D435 depth camera to detect and localize objects in 3D space. Given a text prompt (e.g., "red apple"), the vision pipeline segments the object in the RGB image and projects it into a 3D point cloud to obtain a world-frame pose.</p>
-                    <h4>PCA Grasp Pose Estimation</h4>
-                    <p>PCA analysis on the segmented point cloud extracts the major and normal axes, constructing a grasp pose aligned to the shortest width of the object at its centroid.</p>
+                    <p>We use Segment Anything Model 3 (SAM3) combined with the Intel RealSense D435 depth camera to detect and localize objects in 3D space. Given a text prompt (e.g., "red apple"), the vision pipeline segments the object in the RGB image and projects it into a segmented 3D point cloud.</p>
+                    <h4>Principal Component Analysis </h4>
+                    <p>We use PCA to obtain the segmented pointcloud's major and normal axis, which is used to construct a grasp pose relative to the shortest width of the object and its centroid.</p>
                     <h4>Pan-Tilt Camera</h4>
-                    <p>The camera is mounted on a 2-DOF pan-tilt unit, enabling the robot to scan its environment by sweeping across the scene.</p>
-                </div>
+                    <p>The camera is mounted on a 2-DOF pan-tilt unit, enabling the robot to scan its environment by sweeping across the scene.</p>                </div>
             </div>
 
             <div class="method-block">
@@ -118,22 +117,33 @@
             </div>
         </div>
 
-        <div class="architecture-diagram" style="margin-top: 2.5rem;">
-            <h3>Perception Node</h3>
-            <p>ROS2 service: given a text prompt, SAM3 segments the object and PCA analysis on the 3D point cloud yields a grasp pose. For Task 3, an additional "shiny gold knob" prompt localizes the drawer handle.</p>
-            <img src="perception_diagram.png" alt="Perception node: SAM3 segmentation and PCA grasp pose estimation on 3D point cloud" class="diagram-image">
-        </div>
+        <div class="node-details">
+            <h3>Node Details</h3>
 
-        <div class="architecture-diagram" style="margin-top: 2.5rem;">
-            <h3>LLM Planner</h3>
-            <p>Google Gemini with automatic function calling dispatches actions to a state machine that waits for hardware-ready signals at each step. Error handling retries failed actions and replans after max retries.</p>
-            <img src="planning_diagram.png" alt="Planning architecture: Gemini LLM with function calling, error handling, state machine, and robot actions" class="diagram-image">
-        </div>
+            <div class="node-block">
+                <h4>Perception Node</h4>
+                <img src="assets/perception_node.png" alt="Perception Node - SAM3 + PCA analysis" class="node-image">
+            </div>
 
-        <div class="architecture-diagram" style="margin-top: 2.5rem;">
-            <h3>Voice Control</h3>
-            <p>A ROS2 node with Google Cloud Speech-to-Text passively listens for an activation phrase, then actively records the user's request and matches it to a task for the State Manager.</p>
-            <img src="voice_control.png" alt="Voice control flow: passive listening for activation phrase, active listening for request, speech-to-text, task matching" class="diagram-image">
+            <div class="node-block">
+                <h4>LLM Planner</h4>
+                <img src="assets/llm_planner.png" alt="LLM Planner - Gemini architecture" class="node-image">
+            </div>
+
+            <div class="node-block">
+                <h4>Arm Node</h4>
+                <img src="assets/arm_node.png" alt="Arm Node - IK solver and waypoint control" class="node-image">
+            </div>
+
+            <div class="node-block">
+                <h4>Base Node</h4>
+                <img src="assets/base_node.png" alt="Base Node - 3-phase position control" class="node-image">
+            </div>
+
+            <div class="node-block">
+                <h4>Voice Control</h4>
+                <img src="assets/voice_control.png" alt="Voice Control - speech-to-text pipeline" class="node-image">
+            </div>
         </div>
 
         <div class="software-stack">
@@ -347,7 +357,9 @@
                 <p class="role"><!-- Role/contribution --></p>
             </div>
             <div class="team-member">
-                <div class="member-photo"><img src="assets/brian.jpg" alt="Brian LaBlanc"></div>
+                <div class="member-photo">
+                    <img src="assets/brian.jpg" alt="Brian">
+                </div>
                 <h3>Brian LaBlanc</h3>
                 <p class="role"><!-- Role/contribution --></p>
             </div>

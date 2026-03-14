@@ -45,7 +45,7 @@ from tidybot_msgs.srv import GetObjectPose
 import zmq
 from sensor_msgs.msg import PointCloud2, PointField
 
-
+import cv2
 import std_msgs.msg
 import struct
 
@@ -69,8 +69,8 @@ class SAM3ObjectPoseNode(Node):
         # ------------------------------------------------------------------ #
         self.declare_parameter('min_depth_mm',    100)
         self.declare_parameter('max_depth_mm',    5000)
-        self.declare_parameter('min_valid_pts',   30)
-        self.declare_parameter('base_frame',      'base_link')
+        self.declare_parameter('min_valid_pts',   3)
+        self.declare_parameter('base_frame',      'odom')
 
         self.min_z      = self.get_parameter('min_depth_mm').value
         self.max_z      = self.get_parameter('max_depth_mm').value
@@ -142,14 +142,15 @@ class SAM3ObjectPoseNode(Node):
 
         # publish for debug
 
-        self.pc_pub = self.create_publisher(PointCloud2, "/sam3/points", 10)
+        self.pc_pub_door = self.create_publisher(PointCloud2, "/sam3/points_door", 10)
+        self.pc_pub_knob = self.create_publisher(PointCloud2, "/sam3/points_knob", 10)
         self.pose_pub = self.create_publisher(PoseStamped, "/sam3/pose", 10)
 
-        self.debug_pub_timer = self.create_timer(1.0, self.publish_debug_pc)
+        #self.debug_pub_timer = self.create_timer(1.0, self.publish_debug_pc)
 
     def publish_debug_pc(self):
 
-        prompt_text = "banana"
+        prompt_text = "drawer"
 
         if None in (self.fx, self.fy, self.cx, self.cy):
             return None
@@ -169,41 +170,44 @@ class SAM3ObjectPoseNode(Node):
 
         # SEND A REQUEST TO THE SAM3 SERVER
 
-        self.sock.send_json({"shape": rgb_image.shape, "dtype": str(rgb_image.dtype), "prompt": prompt_text}, zmq.SNDMORE)
-        self.sock.send(rgb_image.tobytes())
+        #self.sock.send_json({"shape": rgb_image.shape, "dtype": str(rgb_image.dtype), "prompt": prompt_text}, zmq.SNDMORE)
+        #self.sock.send(rgb_image.tobytes())
 
-        meta = self.sock.recv_json()
-        data = self.sock.recv()
-        mask_np = np.frombuffer(data, dtype=meta["dtype"]).reshape(meta["shape"])
+        #meta = self.sock.recv_json()
+        #data = self.sock.recv()
+        #mask_np = np.frombuffer(data, dtype=meta["dtype"]).reshape(meta["shape"])
         # Back-project to camera-frame points ----------------------------------
-        points_cam = self._mask_to_points(mask_np, depth)
-        if points_cam is None:
-            return None
+        #points_cam = self._mask_to_points(mask_np, depth)
+        #if points_cam is None:
+        #    return None
 
         # Transform to base frame ----------------------------------------------
     
-        tf_msg = self.tf_buffer.lookup_transform(
-            self.base_frame,
-            self.camera_frame,
-            rclpy.time.Time()
-        )
-        points_base = _transform_pointcloud(points_cam, tf_msg)
-        cloud_msg = create_pointcloud2(points_base, frame_id=self.base_frame)
+        #tf_msg = self.tf_buffer.lookup_transform(
+        #    self.base_frame,
+        #    self.camera_frame,
+        #    rclpy.time.Time()
+        #)
+        #points_base_door = _transform_pointcloud(points_cam, tf_msg)
+        #cloud_msg = create_pointcloud2(points_base_door, frame_id=self.base_frame)
         
+        drawer_points, drawer_err = self._get_points_base(rgb_image, depth, "drawer")
+        knob_points, knob_err = self._get_points_base(rgb_image, depth, "shiny gold knob")
+        self.get_logger().info(f"Drawer points: {drawer_points.shape if drawer_points is not None else None}, knob points: {knob_points.shape if knob_points is not None else None}")
+        stamp =  self.get_clock().now().to_msg()
+
+        if drawer_points is None or knob_points is None:
+            self.get_logger().error(f"Failed to get door or drawer points: {drawer_err}, {knob_err}")
+            return
+        door_pose = _compute_door_pose(drawer_points, knob_points, self.base_frame, 0.0, stamp)
+        
+        cloud_msg = create_pointcloud2(drawer_points, frame_id=self.base_frame)
+        knob_msg = create_pointcloud2(knob_points, frame_id=self.base_frame)
+
         self.pc_pub.publish(cloud_msg)
+        self.pc_pub.publish(knob_msg)
 
-
-
-        pca = PCA(n_components=3)
-        pca.fit(points_base)
-        major_axis  = pca.components_[0]
-
-        centroid_base = points_base.mean(axis=0)
-
-        obj_pose = _compute_pose(centroid_base, major_axis, self.base_frame, self.get_clock().now().to_msg())
-
-
-        self.pose_pub.publish(obj_pose)
+        self.pose_pub.publish(door_pose)
 
 
     def setup_zmq_connection(self):
@@ -285,24 +289,89 @@ class SAM3ObjectPoseNode(Node):
         bgr   = self.bridge.imgmsg_to_cv2(self.latest_rgb,   desired_encoding='bgr8')
         depth = self.bridge.imgmsg_to_cv2(self.latest_depth, desired_encoding='passthrough')
 
-        rgb_image = bgr[:, :, ::-1].copy().astype(np.uint8)
+        # pil_img = PILImage.fromarray(bgr[:, :, ::-1].copy().astype(np.uint8))
+        rgb_image = bgr[:, :, ::-1].copy().astype(np.uint8)  # numpy RGB array
 
-        # SAM3 segmentation via remote server ----------------------------------
-        self.sock.send_json({"shape": rgb_image.shape, "dtype": str(rgb_image.dtype), "prompt": prompt_text}, zmq.SNDMORE)
+
+        # # SAM3 segmentation + back-projection + TF transform -------------------
+        # points_base, err = self._get_points_base(rgb_image, depth, prompt_text)
+        # if points_base is None:
+        #     response.success = False
+        #     response.message = err
+        #     return response
+
+        # Compute grasp pose given the prompt and point cloud ------------------
+        stamp = self.get_clock().now().to_msg()
+        if prompt_text == "door":
+            self.get_logger().info("Checking for door and knob")
+            drawer_points, drawer_err = self._get_points_base(rgb_image, depth, "drawer")
+            knob_points, knob_err = self._get_points_base(rgb_image, depth, "shiny gold knob")
+            if drawer_points is None or knob_points is None:
+                if drawer_points is None:
+                    self.get_logger().info("FAILED TO FIND DOOR")
+                if knob_points is None:
+                    self.get_logger().info("FAILED TO FIND KNOB")
+                response.success = False
+                response.message = f"Failed to get door or drawer points: {drawer_err}, {knob_err}"
+                return response
+            
+            self.get_logger().info("Found door, assembling pose")
+            response.pose = _compute_door_pose(drawer_points, knob_points, self.base_frame, 0.0, stamp)
+        
+            response.success = True
+            response.message = f"Detected '{prompt_text}' with {len(drawer_points)} points."
+        else:
+            points_base, err = self._get_points_base(rgb_image, depth, prompt_text)
+            if points_base is None:
+                response.success = False
+                response.message = err
+                return response
+        
+            response.pose = _compute_object_pose(points_base, self.base_frame, 0.0, stamp)
+
+            response.success = True
+            response.message = f"Detected '{prompt_text}' with {len(points_base)} points."
+
+        self.get_logger().info(response.message)
+        return response
+
+    def _get_points_base(self, rgb_image: np.ndarray, depth: np.ndarray,
+                         prompt_text: str):
+        """
+        Send image + prompt to SAM3 server, back-project the returned mask to
+        camera-frame 3D points, then transform to the base frame.
+
+        Returns (points_base, None) on success, or (None, error_str) on failure.
+        """
+        # Send request to SAM3 server ------------------------------------------
+        self.sock.send_json(
+            {"shape": list(rgb_image.shape), "dtype": str(rgb_image.dtype), "prompt": prompt_text},
+            zmq.SNDMORE,
+        )
         self.sock.send(rgb_image.tobytes())
 
-        meta = self.sock.recv_json()
-        data = self.sock.recv()
+        meta   = self.sock.recv_json()
+        data   = self.sock.recv()
         mask_np = np.frombuffer(data, dtype=meta["dtype"]).reshape(meta["shape"])
+        self.get_logger().info(f"Mask shape: {mask_np.shape}, objects: {meta.get('num_objects', '?')}")
+
+        # Keep only the highest blob (lowest centroid row = highest in image) --
+        num_labels, labels = cv2.connectedComponents(mask_np.astype(np.uint8))
+        if num_labels > 2:  # label 0 is background
+            best_label = min(
+                range(1, num_labels),
+                key=lambda l: np.mean(np.where(labels == l)[0])  # mean row
+            )
+            mask_np = (labels == best_label).astype(np.uint8)
+            self.get_logger().info(f"Multiple blobs found, keeping highest (label {best_label})")
+
         # Back-project to camera-frame points ----------------------------------
         points_cam = self._mask_to_points(mask_np, depth)
         if points_cam is None:
-            response.success = False
-            response.message = (
+            return None, (
                 f"Too few valid depth points for '{prompt_text}' "
                 f"(need >= {self.min_pts})."
             )
-            return response
 
         # Transform to base frame ----------------------------------------------
         try:
@@ -314,39 +383,9 @@ class SAM3ObjectPoseNode(Node):
             points_base = _transform_pointcloud(points_cam, tf_msg)
 
         except Exception as e:
-            response.success = False
-            response.message = f"TF lookup failed: {e}"
-            return response
+            return None, f"TF lookup failed: {e}"
 
-        # Centroid + PCA orientation -------------------------------------------
-        centroid_cam  = points_cam.mean(axis=0)
-        centroid_base = points_base.mean(axis=0)
-        self.get_logger().info(
-            f"'{prompt_text}' centroid: cam=({centroid_cam[0]:.3f}, {centroid_cam[1]:.3f}, {centroid_cam[2]:.3f}) "
-            f"base=({centroid_base[0]:.3f}, {centroid_base[1]:.3f}, {centroid_base[2]:.3f}) [{self.base_frame}]"
-        )
-
-        pca = PCA(n_components=3)
-        pca.fit(points_base)
-        major_axis  = pca.components_[0]
-
-        stamp = self.get_clock().now().to_msg()
-        response.success = True
-        response.pose    = _compute_pose(centroid_base, major_axis, self.base_frame, stamp)
-        response.pose.pose.position.z += 0.06
-        response.pose.pose.position.x += 0.02
-
-        p = response.pose.pose.position
-        self.get_logger().info(
-            f"'{prompt_text}' final pose: ({p.x:.3f}, {p.y:.3f}, {p.z:.3f}) [{self.base_frame}]"
-        )
-
-        response.message = (
-            f"Detected '{prompt_text}' with {len(points_base)} points."
-        )
-        self.get_logger().info(response.message)
-
-        return response
+        return points_base, None
 
     # ---------------------------------------------------------------------- #
     # Depth back-projection                                                    #
@@ -397,15 +436,70 @@ def _transform_pointcloud(points: np.ndarray, tf: TransformStamped) -> np.ndarra
     return (T @ points_h.T).T[:, :3]
 
 
-def _compute_pose(centroid: np.ndarray, axis: np.ndarray,
-                  frame_id: str, stamp) -> PoseStamped:
+def _compute_door_pose(drawer_points: np.ndarray, knob_points: np.ndarray,
+                  frame_id: str, offset: float, stamp) -> PoseStamped:
+
+    # Position: centered on the knob
+    # Orientation: aligned along the drawer pull direction (PCA of drawer points)
+
+    centroid = knob_points.mean(axis=0)
+
+    pca = PCA(n_components=3)
+    pca.fit(drawer_points)
+    axis = pca.components_[2]  # normal to the drawer face = pull direction
+    # is this primary axis normal to the plan formed by the drawer points?
+
     pose = PoseStamped()
     pose.header.stamp    = stamp
     pose.header.frame_id = frame_id
 
     pose.pose.position.x = float(centroid[0])
     pose.pose.position.y = float(centroid[1])
-    pose.pose.position.z = float(centroid[2])
+    pose.pose.position.z = float(centroid[2]) + 0.1
+
+    # # Gripper y-axis along drawer pull direction, z-axis up
+    # z = np.array([0.0, 0.0, 1.0])
+    # y = axis - np.dot(axis, z) * z
+    # norm = np.linalg.norm(y)
+    # y = y / norm if norm > 1e-6 else np.array([0.0, 1.0, 0.0])
+    # x = np.cross(y, z)
+    # x /= np.linalg.norm(x)
+
+    # Gripper x-axis into the drawer (along normal), z-axis up
+    z = np.array([0.0, 0.0, 1.0])
+    x = axis.copy()
+    x[2] = 0.0  # flatten to XY plane
+    norm = np.linalg.norm(x)
+    x = x / norm if norm > 1e-6 else np.array([1.0, 0.0, 0.0])
+    y = np.cross(z, x)
+    y /= np.linalg.norm(y)
+
+    rot_mat = np.column_stack((x, y, z))
+    quat    = R.from_matrix(rot_mat).as_quat()
+    #quat    = (quat * R.from_euler('xyz', [0, 0, np.pi])).as_quat()  # rotate 180 around Z to flip gripper direction
+
+    pose.pose.orientation.x = float(quat[0])
+    pose.pose.orientation.y = float(quat[1])
+    pose.pose.orientation.z = float(quat[2])
+    pose.pose.orientation.w = float(quat[3])
+
+    return pose
+
+def _compute_object_pose(points_base: np.ndarray,
+                  frame_id: str, offset: float, stamp) -> PoseStamped:
+    
+    centroid    = points_base.mean(axis=0)
+    pca         = PCA(n_components=3)
+    pca.fit(points_base)
+    axis  = pca.components_[0]
+
+    pose = PoseStamped()
+    pose.header.stamp    = stamp
+    pose.header.frame_id = frame_id
+
+    pose.pose.position.x = float(centroid[0])
+    pose.pose.position.y = float(centroid[1])
+    pose.pose.position.z = float(centroid[2]) + offset
 
     # Align gripper: x-axis along world -Z, y-axis along minor axis
     z = np.array([0.0, 0.0, 1.0])

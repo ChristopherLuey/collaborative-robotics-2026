@@ -47,6 +47,7 @@ install(PROGRAMS
   scripts/sam3_pointcloud_node.py
   scripts/state_manager.py
   scripts/text_task_input.py
+  scripts/speech_to_text.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

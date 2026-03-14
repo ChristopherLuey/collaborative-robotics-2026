@@ -207,6 +207,7 @@ class ArmPlanner(Node):
         self.get_logger().info(
             f'IK request ({arm_name}): '
             f'odom=({pose.position.x:.3f}, {pose.position.y:.3f}, {pose.position.z:.3f}) '
+            f'odom=({pose.orientation.x:.3f}, {pose.orientation.y:.3f}, {pose.orientation.z:.3f}, {pose.orientation.w:.3f}) '
             f'-> base_link=({req.target_pose.position.x:.3f}, {req.target_pose.position.y:.3f}, {req.target_pose.position.z:.3f})'
         )
         
