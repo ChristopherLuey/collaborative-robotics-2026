@@ -122,26 +122,31 @@
 
             <div class="node-block">
                 <h4>Perception Node</h4>
+                <p>ROS2 service: given a text prompt, SAM3 segments the object and PCA analysis on the 3D point cloud yields a grasp pose. For Task 3, an additional "shiny gold knob" prompt localizes the drawer handle.</p>
                 <img src="assets/perception_node.png" alt="Perception Node - SAM3 + PCA analysis" class="node-image">
             </div>
 
             <div class="node-block">
                 <h4>LLM Planner</h4>
+                <p>Google Gemini with automatic function calling dispatches actions to a state machine that waits for hardware-ready signals at each step. Error handling retries failed actions and replans after max retries.</p>
                 <img src="assets/llm_planner.png" alt="LLM Planner - Gemini architecture" class="node-image">
             </div>
 
             <div class="node-block">
                 <h4>Arm Node</h4>
+                <p>An action queue service processes high-level commands (Grab, Release, Move) by decomposing them into IK-solved waypoint sequences. Non-blocking service calls allow smooth chaining of multi-step motions.</p>
                 <img src="assets/arm_node.png" alt="Arm Node - IK solver and waypoint control" class="node-image">
             </div>
 
             <div class="node-block">
                 <h4>Base Node</h4>
+                <p>The 3-DOF holonomic base performs 3-phase position control (rotate to heading, translate, rotate to final orientation) and publishes when the goal is reached.</p>
                 <img src="assets/base_node.png" alt="Base Node - 3-phase position control" class="node-image">
             </div>
 
             <div class="node-block">
                 <h4>Voice Control</h4>
+                <p>A ROS2 node with Google Cloud Speech-to-Text passively listens for an activation phrase ("Hey Robot!"), then actively records the user's request and matches it to a task for the State Manager.</p>
                 <img src="assets/voice_control.png" alt="Voice Control - speech-to-text pipeline" class="node-image">
             </div>
         </div>
