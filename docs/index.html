@@ -41,17 +41,17 @@
             <div class="card">
                 <div class="card-icon">1</div>
                 <h3>Object Retrieval</h3>
-                <p>"Find the apple and bring it here." Voice command triggers a full pipeline: scan the scene, locate the object, navigate to it, pick it up, and return.</p>
+                <p>"Find the banana and bring it here." Voice command triggers a full pipeline: scan the scene, locate the object, navigate to it, pick it up, and return.</p>
             </div>
             <div class="card">
                 <div class="card-icon">2</div>
                 <h3>Sequential Task</h3>
-                <p>"Find the red apple and place it in the brown basket." Multi-step natural language commands that chain perception, navigation, and manipulation.</p>
+                <p>"Find the banana and place it in the basket." Multi-step natural language commands that chain perception, navigation, and manipulation.</p>
             </div>
             <div class="card">
                 <div class="card-icon">3</div>
                 <h3>Drawer Articulation</h3>
-                <p>Open and close a drawer using bimanual coordination, demonstrating dexterous manipulation of articulated objects.</p>
+                <p>Open a drawer in a cabinet using one arm, demonstrating dexterous manipulation of articulated objects.</p>
             </div>
         </div>
 
@@ -81,7 +81,7 @@
                 <h3>Perception</h3>
                 <div class="method-content">
                     <h4>SAM3 + RealSense D435</h4>
-                    <p>We use Segment Anything Model 3 (SAM3) combined with the Intel RealSense D435 depth camera to detect and localize objects in 3D space. Given a text prompt (e.g., "red apple"), the vision pipeline segments the object in the RGB image and projects it into a segmented 3D point cloud.</p>
+                    <p>We use Segment Anything Model 3 (SAM3) combined with the Intel RealSense D435 depth camera to detect and localize objects in 3D space. Given a text prompt (e.g., "banana"), the vision pipeline segments the object in the RGB image and projects it into a segmented 3D point cloud.</p>
                     <h4>Principal Component Analysis </h4>
                     <p>We use PCA to obtain the segmented pointcloud's major and normal axis, which is used to construct a grasp pose relative to the shortest width of the object and its centroid.</p>
                     <h4>Pan-Tilt Camera</h4>
@@ -247,15 +247,6 @@
                 <ul>
                     <li><!-- Fill in with specific results from drawer task demos --></li>
                 </ul>
-            </div>
-        </div>
-
-        <div class="result-block">
-            <h3>Simulation vs. Real Hardware</h3>
-            <div class="video-placeholder">
-                <div class="placeholder-box">
-                    <p>IMAGE/VIDEO: Side-by-side MuJoCo simulation and real robot comparison</p>
-                </div>
             </div>
         </div>
     </div>
